@@ -2,7 +2,7 @@
 Damm Smart Truck — Optimitzador de Ruta
 Algorisme: VRP amb Time Windows (VRPTW) via OR-Tools
 
-INPUT:  hackaton.db  →  ruta + data concreta
+INPUT:  MongoDB (detalle_entrega, horarios_entrega)  →  ruta + data concreta
 OUTPUT: Ordre òptim de visita dels clients + hora estimada d'arribada
 
 Ús com a mòdul:
@@ -15,7 +15,7 @@ OUTPUT: Ordre òptim de visita dels clients + hora estimada d'arribada
 
 import argparse
 import json
-import sqlite3
+import sys
 import ssl
 import certifi
 import urllib.request
@@ -34,7 +34,9 @@ import folium
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 BASE_DIR = Path(__file__).parent
-DB_PATH  = BASE_DIR / "hackaton.db"
+sys.path.insert(0, str(BASE_DIR.parent / 'db'))
+
+from mongo import get_db  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -97,43 +99,46 @@ def carregar_parades(ruta: str, data: str) -> pd.DataFrame:
     Columnes: nom, carrer, cp, poblacio, zona, deudor,
               caixes, barrils, unitats, temps_descarrega_min
     """
-    conn = sqlite3.connect(DB_PATH)
+    mdb = get_db()
 
-    # Parades bàsiques
-    query_parades = """
-        SELECT
-            MAX(nombre_1)          AS nom,
-            MAX(calle)             AS carrer,
-            MAX(cp)                AS cp,
-            MAX(poblaci_n)         AS poblacio,
-            MAX(zonatransp_1)      AS zona,
-            destinatario_mc_a_1    AS deudor,
-            entrega
-        FROM detalle_entrega
-        WHERE ruta = ? AND fecha = ?
-        GROUP BY entrega, destinatario_mc_a_1
-    """
-    parades = pd.read_sql_query(query_parades, conn, params=(ruta, data))
+    # Parades bàsiques: una per entrega+deudor
+    pipeline = [
+        {"$match": {"ruta": ruta, "fecha": data}},
+        {"$group": {
+            "_id": {"entrega": "$entrega", "deudor": "$destinatario_mc_a_1"},
+            "nom":      {"$first": "$nombre_1"},
+            "carrer":   {"$first": "$calle"},
+            "cp":       {"$first": "$cp"},
+            "poblacio": {"$first": "$poblaci_n"},
+            "zona":     {"$first": "$zonatransp_1"},
+        }},
+        {"$project": {
+            "_id": 0,
+            "entrega": "$_id.entrega",
+            "deudor":  "$_id.deudor",
+            "nom": 1, "carrer": 1, "cp": 1, "poblacio": 1, "zona": 1,
+        }},
+    ]
+    parades = pd.DataFrame(list(mdb["detalle_entrega"].aggregate(pipeline)))
 
-    # Volums per entrega: suma per tipus d'UMA
-    query_volums = """
-        SELECT
-            entrega,
-            SUM(CASE WHEN UPPER(un_medida_venta) = 'CAJ'
-                     THEN CAST(REPLACE(cantidad_entrega, ',', '.') AS REAL)
-                     ELSE 0 END) AS caixes,
-            SUM(CASE WHEN UPPER(un_medida_venta) = 'BRL'
-                     THEN CAST(REPLACE(cantidad_entrega, ',', '.') AS REAL)
-                     ELSE 0 END) AS barrils,
-            SUM(CASE WHEN UPPER(un_medida_venta) = 'UN'
-                     THEN CAST(REPLACE(cantidad_entrega, ',', '.') AS REAL)
-                     ELSE 0 END) AS unitats
-        FROM detalle_entrega
-        WHERE ruta = ? AND fecha = ?
-        GROUP BY entrega
-    """
-    volums = pd.read_sql_query(query_volums, conn, params=(ruta, data))
-    conn.close()
+    # Volums per entrega: fetch i processa en Python (valors guardats com a string)
+    docs_vol = list(mdb["detalle_entrega"].find(
+        {"ruta": ruta, "fecha": data},
+        {"entrega": 1, "un_medida_venta": 1, "cantidad_entrega": 1, "_id": 0}
+    ))
+    vol_df = pd.DataFrame(docs_vol)
+    if not vol_df.empty:
+        vol_df['cantidad_entrega'] = pd.to_numeric(
+            vol_df['cantidad_entrega'].str.replace(',', '.', regex=False),
+            errors='coerce'
+        ).fillna(0)
+        vol_df['um'] = vol_df['un_medida_venta'].str.upper()
+        caixes  = vol_df[vol_df['um'] == 'CAJ'].groupby('entrega')['cantidad_entrega'].sum().rename('caixes')
+        barrils = vol_df[vol_df['um'] == 'BRL'].groupby('entrega')['cantidad_entrega'].sum().rename('barrils')
+        unitats = vol_df[vol_df['um'] == 'UN'].groupby('entrega')['cantidad_entrega'].sum().rename('unitats')
+        volums  = pd.concat([caixes, barrils, unitats], axis=1).fillna(0).reset_index()
+    else:
+        volums = pd.DataFrame(columns=['entrega', 'caixes', 'barrils', 'unitats'])
 
     parades = parades.merge(volums, on='entrega', how='left')
     parades[['caixes', 'barrils', 'unitats']] = (
@@ -154,18 +159,20 @@ def carregar_horaris(dia_setmana: int) -> pd.DataFrame:
     Retorna les time windows per al dia de la setmana indicat.
     Columnes: deudor, tw_inici_s, tw_fi_s, tancat
     """
-    conn = sqlite3.connect(DB_PATH)
-    query = """
-        SELECT
-            deudor,
-            horario_inicia_a  AS "Horario inicia a",
-            horario_termina_a AS "Horario termina a",
-            cierre_si_no      AS "Cierre Si/No"
-        FROM horarios_entrega
-        WHERE d_a_semana = ?
-    """
-    h = pd.read_sql_query(query, conn, params=(str(dia_setmana),))
-    conn.close()
+    mdb  = get_db()
+    docs = list(mdb["horarios_entrega"].find(
+        {"d_a_semana": str(dia_setmana)},
+        {"deudor": 1, "horario_inicia_a": 1, "horario_termina_a": 1, "cierre_si_no": 1, "_id": 0}
+    ))
+    h = pd.DataFrame(docs)
+    if h.empty:
+        return pd.DataFrame(columns=['deudor', 'tw_inici_s', 'tw_fi_s', 'tancat'])
+
+    h = h.rename(columns={
+        "horario_inicia_a":  "Horario inicia a",
+        "horario_termina_a": "Horario termina a",
+        "cierre_si_no":      "Cierre Si/No",
+    })
 
     def parse_hora(valor):
         if pd.isna(valor) or valor == '':
@@ -813,80 +820,40 @@ def guardar_a_db(parades_ruta: list, ruta: str, data: str,
                  clients_visitats: int, clients_saltats: int,
                  temps_total_s: int) -> None:
     """
-    Persisteix els resultats a hackaton.db:
-      - ruta_punts:  un registre per client individual
-      - ruta_resum:  un registre per execució
+    Persisteix els resultats a MongoDB:
+      - ruta_punts:  un document per client individual
+      - ruta_resum:  un document per execució
     """
-    conn = sqlite3.connect(DB_PATH)
-    cur  = conn.cursor()
+    mdb = get_db()
 
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS ruta_punts (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            ruta            TEXT    NOT NULL,
-            data            TEXT    NOT NULL,
-            ordre           INTEGER NOT NULL,
-            nom             TEXT,
-            zona            TEXT,
-            lat             REAL,
-            lon             REAL,
-            hora            TEXT,
-            hora_s          INTEGER,
-            temps_descarrega INTEGER,
-            parada_compartida INTEGER,
-            geometria_json  TEXT
-        );
+    mdb["ruta_punts"].delete_many({"ruta": ruta, "data": data})
+    mdb["ruta_resum"].delete_many({"ruta": ruta, "data": data})
 
-        CREATE TABLE IF NOT EXISTS ruta_resum (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            ruta            TEXT    NOT NULL,
-            data            TEXT    NOT NULL,
-            total_parades   INTEGER,
-            clients_visitats INTEGER,
-            clients_saltats  INTEGER,
-            temps_total_min  INTEGER,
-            creat_a         TEXT    DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-
-    # Esborrar execucions anteriors per la mateixa ruta+data
-    cur.execute("DELETE FROM ruta_punts WHERE ruta = ? AND data = ?", (ruta, data))
-    cur.execute("DELETE FROM ruta_resum WHERE ruta = ? AND data = ?", (ruta, data))
-
-    # Inserir punts (excloem el dipòsit de sortida i retorn)
+    punts = []
     for p in parades_ruta:
         if p['nom'] in ('DDI Mollet (sortida)', 'DDI Mollet (retorn)'):
             continue
-        cur.execute("""
-            INSERT INTO ruta_punts
-                (ruta, data, ordre, nom, zona, lat, lon, hora, hora_s,
-                 temps_descarrega, parada_compartida, geometria_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            ruta, data,
-            p['ordre'], p['nom'], p['zona'],
-            p['lat'], p['lon'],
-            p['hora'], p['hora_s'],
-            p['temps_descarrega'],
-            p['parada_compartida'],
-            json.dumps(p['geometria'], ensure_ascii=False) if p['geometria'] else None,
-        ))
+        punts.append({
+            "ruta": ruta, "data": data,
+            "ordre": p['ordre'], "nom": p['nom'], "zona": p['zona'],
+            "lat": p['lat'], "lon": p['lon'],
+            "hora": p['hora'], "hora_s": p['hora_s'],
+            "temps_descarrega": p['temps_descarrega'],
+            "parada_compartida": p['parada_compartida'],
+            "geometria_json": json.dumps(p['geometria'], ensure_ascii=False) if p['geometria'] else None,
+        })
+    if punts:
+        mdb["ruta_punts"].insert_many(punts)
 
-    total_parades = clients_visitats + clients_saltats
-    cur.execute("""
-        INSERT INTO ruta_resum
-            (ruta, data, total_parades, clients_visitats, clients_saltats, temps_total_min)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        ruta, data,
-        total_parades, clients_visitats, clients_saltats,
-        temps_total_s // 60,
-    ))
-
-    conn.commit()
-    conn.close()
-    print(f"[OK] Resultats guardats a hackaton.db "
-          f"(ruta_punts: {clients_visitats} files, ruta_resum: 1 fila)")
+    mdb["ruta_resum"].insert_one({
+        "ruta": ruta, "data": data,
+        "total_parades": clients_visitats + clients_saltats,
+        "clients_visitats": clients_visitats,
+        "clients_saltats": clients_saltats,
+        "temps_total_min": temps_total_s // 60,
+    })
+    print(f"[OK] Resultats guardats a MongoDB "
+          f"(ruta_punts: {clients_visitats} docs, ruta_resum: 1 doc)")
 
 
 # ═══════════════════════════════════════════════════════════════════

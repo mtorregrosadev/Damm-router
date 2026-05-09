@@ -1,0 +1,23 @@
+# macOS / editor
+.DS_Store
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+
+# Databases generated locally
+*.db
+*.sqlite
+*.sqlite3
+
+# Large/local data files
+*.pdf
+*.txt
+.gitignore
+
+src/__pycache__

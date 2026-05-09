@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+from mongo import get_db
 
 
 BASE_DIR = Path(__file__).parent
@@ -156,57 +157,53 @@ def simular_ortools(variables: dict) -> list[int]:
 
 
 def guardar_resultado_simulado(conn: sqlite3.Connection, variables: dict, orden: list[int]) -> None:
+    id_ruta = variables["id_ruta_algoritmo"]
+
+    # ── Construir documentos ─────────────────────────────────
+    docs = []
+    for orden_parada, idx in enumerate(orden, start=1):
+        docs.append({
+            "id_ruta_algoritmo":          id_ruta,
+            "fecha":                      variables["fecha"],
+            "id_transporte":              variables["id_transporte"],
+            "id_ruta":                    variables["id_ruta"],
+            "id_repartidor":              variables["id_repartidor"],
+            "orden_parada":               orden_parada,
+            "id_destinatario_mercancia":  variables["ids_destinatario"][idx],
+            "ids_entrega":                variables["ids_entrega"][idx],
+            "direccion_completa":         variables["direcciones"][idx],
+            "latitud":                    variables["latitudes"][idx],
+            "longitud":                   variables["longitudes"][idx],
+            "distancia_desde_anterior_m": None,
+            "duracion_desde_anterior_s":  None,
+            "distancia_acumulada_m":      None,
+            "duracion_acumulada_s":       None,
+        })
+
+    # ── SQLite ───────────────────────────────────────────────
     conn.execute(
         "DELETE FROM resultado_rutas_ortools WHERE id_ruta_algoritmo = ?",
-        (variables["id_ruta_algoritmo"],),
+        (id_ruta,),
     )
-
-    filas = []
-    for orden_parada, idx in enumerate(orden, start=1):
-        filas.append(
-            (
-                variables["id_ruta_algoritmo"],
-                variables["fecha"],
-                variables["id_transporte"],
-                variables["id_ruta"],
-                variables["id_repartidor"],
-                orden_parada,
-                variables["ids_destinatario"][idx],
-                variables["ids_entrega"][idx],
-                variables["direcciones"][idx],
-                variables["latitudes"][idx],
-                variables["longitudes"][idx],
-                None,
-                None,
-                None,
-                None,
-            )
-        )
-
     conn.executemany(
         """
         INSERT INTO resultado_rutas_ortools (
-            id_ruta_algoritmo,
-            fecha,
-            id_transporte,
-            id_ruta,
-            id_repartidor,
-            orden_parada,
-            id_destinatario_mercancia,
-            ids_entrega,
-            direccion_completa,
-            latitud,
-            longitud,
-            distancia_desde_anterior_m,
-            duracion_desde_anterior_s,
-            distancia_acumulada_m,
-            duracion_acumulada_s
+            id_ruta_algoritmo, fecha, id_transporte, id_ruta, id_repartidor,
+            orden_parada, id_destinatario_mercancia, ids_entrega,
+            direccion_completa, latitud, longitud,
+            distancia_desde_anterior_m, duracion_desde_anterior_s,
+            distancia_acumulada_m, duracion_acumulada_s
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        filas,
+        [tuple(d.values()) for d in docs],
     )
     conn.commit()
+
+    # ── MongoDB ──────────────────────────────────────────────
+    col = get_db()["resultado_rutas_ortools"]
+    col.delete_many({"id_ruta_algoritmo": id_ruta})
+    col.insert_many(docs)
 
 
 def imprimir_resumen(variables: dict, orden: list[int]) -> None:

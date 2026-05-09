@@ -2,22 +2,23 @@ import sqlite3
 import re
 import pandas as pd
 from pathlib import Path
+from mongo import get_db
 
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent
-DB_PATH    = BASE_DIR / "src/hackaton.db"
+DB_PATH    = BASE_DIR / "hackaton.db"
 
 EXCEL_FILES = {
-    "Hackaton.xlsx": {
+    "../BD/Hackaton.xlsx": {
         "Detalle entrega":      "detalle_entrega",
         "Cabecera Transporte":  "cabecera_transporte",
         "Direcciones":          "direcciones",
         "ZONAS":                "zonas",
         "Materiales zubic":     "materiales_zubic",
     },
-    "Horarios Entrega.XLSX": {
+    "../BD/Horarios Entrega.XLSX": {
         "Sheet1": "horarios_entrega",
     },
 }
@@ -78,8 +79,9 @@ def infer_create_table(df: pd.DataFrame, table_name: str) -> str:
 # CARGA PRINCIPAL
 # ─────────────────────────────────────────────
 def load_excel_to_sqlite() -> None:
-    conn = sqlite3.connect(DB_PATH)
+    conn   = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    mdb    = get_db()
 
     total_tables = 0
     total_rows   = 0
@@ -103,17 +105,16 @@ def load_excel_to_sqlite() -> None:
             df = pd.read_excel(
                 xls,
                 sheet_name=sheet_name,
-                dtype=str,          # leer todo como texto primero
+                dtype=str,
                 keep_default_na=False,
             )
             df = clean_dataframe(df)
 
-            # Crear tabla
+            # ── SQLite ──────────────────────────────────────────
             create_sql = infer_create_table(df, table_name)
             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
             cursor.execute(create_sql)
 
-            # Insertar filas en lotes de 1 000
             batch_size = 1_000
             placeholders = ", ".join(["?"] * len(df.columns))
             insert_sql = (
@@ -123,14 +124,21 @@ def load_excel_to_sqlite() -> None:
             records = df.values.tolist()
             for i in range(0, len(records), batch_size):
                 cursor.executemany(insert_sql, records[i : i + batch_size])
-
             conn.commit()
-            print(f"{len(df):,} filas cargadas ✓")
+
+            # ── MongoDB ─────────────────────────────────────────
+            col = mdb[table_name]
+            col.drop()                          # reemplazar colección completa
+            docs = df.to_dict(orient="records")
+            if docs:
+                col.insert_many(docs)
+
+            print(f"{len(df):,} filas cargadas ✓ (SQLite + MongoDB)")
             total_tables += 1
             total_rows   += len(df)
 
     conn.close()
-    print(f"\n✅ Listo. {total_tables} tablas, {total_rows:,} filas → {DB_PATH}\n")
+    print(f"\n✅ Listo. {total_tables} tablas, {total_rows:,} filas → SQLite y MongoDB\n")
 
 
 # ─────────────────────────────────────────────

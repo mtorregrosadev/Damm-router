@@ -2,14 +2,13 @@
 
 import { useState } from "react"
 import dynamic from "next/dynamic"
-import { LanguageProvider } from "@/web/lib/i18n"
-import { Topbar } from "@/web/components/dashboard/topbar"
-import { Sidebar } from "@/web/components/dashboard/sidebar"
-import { mockTruckData } from "@/web/lib/mockData"
+import { LanguageProvider } from "@/lib/i18n"
+import { Topbar } from "@/components/dashboard/topbar"
+import { Sidebar } from "@/components/dashboard/sidebar"
 
 // Dynamic imports for heavy components
 const RouteMap = dynamic(
-  () => import("@/web/components/dashboard/route-map").then((mod) => mod.RouteMap),
+  () => import("@/components/dashboard/route-map").then((mod) => mod.RouteMap),
   { 
     ssr: false,
     loading: () => (
@@ -21,7 +20,7 @@ const RouteMap = dynamic(
 )
 
 const TruckView = dynamic(
-  () => import("@/web/components/dashboard/truck-view").then((mod) => mod.TruckView),
+  () => import("@/components/dashboard/truck-view").then((mod) => mod.TruckView),
   {
     ssr: false,
     loading: () => (
@@ -55,7 +54,6 @@ function DashboardContent() {
               onSelectStop={setSelectedStop}
               routeId="DR0006"
               driverId="DRV001"
-              truckLoad={mockTruckData}
             />
           ) : (
             <RouteMap

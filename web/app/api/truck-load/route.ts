@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import type { TruckLoadAPIResponse, TruckLoadData } from "@/web/lib/types/truck-load"
+import type { TruckLoadAPIResponse, TruckLoadData } from "@/lib/types/truck-load"
 
 // =================================================================
 // API ROUTE: GET /api/truck-load?routeId=DR0006

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import type { DriverRoutesResponse, DriverRoute } from "@/web/lib/types/truck-load"
+import type { DriverRoutesResponse, DriverRoute } from "@/lib/types/truck-load"
 
 // =================================================================
 // API ROUTE: GET /api/driver-routes?driverId=DRV001

@@ -1,7 +1,7 @@
 "use client"
 
-import { LanguageProvider } from "@/web/lib/i18n"
-import { LoginForm } from "@/web/components/login-form"
+import { LanguageProvider } from "@/lib/i18n"
+import { LoginForm } from "@/components/login-form"
 
 export default function HomePage() {
   return (

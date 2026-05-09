@@ -79,29 +79,29 @@ function GraphOverlay({
   const getEdgeStyle = (state: EdgeState, isReturn: boolean) => {
     switch (state) {
       case "active":
-        return { stroke: "#F5A623", strokeWidth: 3, opacity: 1, dashArray: undefined }
+        return { stroke: "var(--amber)", strokeWidth: 3, opacity: 1, dashArray: undefined }
       case "visited":
-        return { stroke: "#C8102E", strokeWidth: 2.5, opacity: 0.85, dashArray: undefined }
+        return { stroke: "var(--red)", strokeWidth: 2.5, opacity: 0.85, dashArray: undefined }
       case "return":
-        return { stroke: "#5570A0", strokeWidth: 1.5, opacity: 0.8, dashArray: "4 3" }
+        return { stroke: "var(--gray-mid)", strokeWidth: 1.5, opacity: 0.8, dashArray: "4 3" }
       default:
-        return { stroke: "#1E2A45", strokeWidth: 1, opacity: 0.3, dashArray: isReturn ? "4 3" : undefined }
+        return { stroke: "var(--gray-light)", strokeWidth: 1, opacity: 0.3, dashArray: isReturn ? "4 3" : undefined }
     }
   }
 
   const getNodeStyle = (node: GraphNode, state: NodeState) => {
     if (node.type === "warehouse") {
-      return { r: 14, fill: "#F5A623", stroke: "#D4940F", strokeWidth: 2 }
+      return { r: 14, fill: "var(--amber)", stroke: "var(--amber)", strokeWidth: 2 }
     }
     switch (state) {
       case "active":
-        return { r: 6, fill: "#F5A623", stroke: "#F5A623", strokeWidth: 0 }
+        return { r: 6, fill: "var(--amber)", stroke: "var(--amber)", strokeWidth: 0 }
       case "visited":
-        return { r: 4, fill: "#C8102E", stroke: "none", strokeWidth: 0 }
+        return { r: 4, fill: "var(--red)", stroke: "none", strokeWidth: 0 }
       case "stop-reached":
-        return { r: 14, fill: "#C8102E", stroke: "#A00D26", strokeWidth: 2 }
+        return { r: 14, fill: "var(--red)", stroke: "var(--red-dark)", strokeWidth: 2 }
       default:
-        return { r: node.type === "stop" ? 8 : 3, fill: node.type === "stop" ? "#2A3A5C" : "#2A3A5C", stroke: node.type === "stop" ? "#1E2A45" : "none", strokeWidth: node.type === "stop" ? 2 : 0 }
+        return { r: node.type === "stop" ? 8 : 3, fill: node.type === "stop" ? "var(--charcoal)" : "var(--gray-mid)", stroke: node.type === "stop" ? "var(--gray-mid)" : "none", strokeWidth: node.type === "stop" ? 2 : 0 }
     }
   }
 
@@ -167,7 +167,6 @@ function GraphOverlay({
               stroke={style.stroke}
               strokeWidth={style.strokeWidth}
               filter={state === "active" ? "url(#glow)" : undefined}
-              className={isStopReached ? "animate-pop-in" : ""}
             />
             {(isStopReached || (node.type === "stop" && state === "unvisited")) && node.stopId && (
               <text
@@ -233,7 +232,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
   const [edgeStates, setEdgeStates] = useState<Record<string, EdgeState>>({})
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({})
   const [isPlaying, setIsPlaying] = useState(false)
-  const [speed, setSpeed] = useState(400)
+  const [speed, setSpeed] = useState(150)
   const [soundOn, setSoundOn] = useState(true)
   const audioContextRef = useRef<AudioContext | null>(null)
 
@@ -246,35 +245,81 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
   }, [])
 
   // Audio functions
-  const playTick = useCallback((type: "intersection" | "stop" | "warehouse") => {
+  const playAlgoBeep = useCallback((nodeIndex: number, totalNodes: number) => {
     if (!soundOn) return
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
     }
     const ctx = audioContextRef.current
-    const oscillator = ctx.createOscillator()
-    const gainNode = ctx.createGain()
     
-    oscillator.connect(gainNode)
-    gainNode.connect(ctx.destination)
+    // Different sounds for intersections vs stops
+    const isStop = nodeIndex > 0 && nodeIndex < totalNodes - 1 // Middle nodes are stops
     
-    if (type === "stop") {
-      oscillator.frequency.value = 880
-      oscillator.type = "sine"
-      gainNode.gain.value = 0.15
-    } else if (type === "warehouse") {
-      oscillator.frequency.value = 1200
-      oscillator.type = "sine"
-      gainNode.gain.value = 0.2
+    if (isStop) {
+      // Stop ding: frequency 520Hz, duration 60ms, volume 0.18
+      // + overtone 780Hz, duration 100ms
+      const osc1 = ctx.createOscillator()
+      const osc2 = ctx.createOscillator()
+      const gain = ctx.createGain()
+      
+      osc1.connect(gain)
+      osc2.connect(gain)
+      gain.connect(ctx.destination)
+      
+      osc1.type = 'sine'
+      osc1.frequency.value = 520
+      
+      osc2.type = 'sine'
+      osc2.frequency.value = 780
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1)
+      
+      osc1.start(ctx.currentTime)
+      osc1.stop(ctx.currentTime + 0.06)
+      osc2.start(ctx.currentTime)
+      osc2.stop(ctx.currentTime + 0.1)
     } else {
-      oscillator.frequency.value = 440
-      oscillator.type = "sine"
-      gainNode.gain.value = 0.08
+      // Intersection tick: frequency 1200Hz, duration 20ms, volume 0.06
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      
+      osc.type = 'sine'
+      osc.frequency.value = 1200
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.005)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.02)
+      
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.02)
     }
-    
-    oscillator.start()
-    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
-    oscillator.stop(ctx.currentTime + 0.15)
+  }, [soundOn])
+
+  const playCompletionChord = useCallback(() => {
+    if (!soundOn) return
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    }
+    const ctx = audioContextRef.current
+    const notes = [523, 659, 784, 1046] // C5, E5, G5, C6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.08)
+      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + i * 0.08 + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.2)
+      osc.start(ctx.currentTime + i * 0.08)
+      osc.stop(ctx.currentTime + i * 0.08 + 0.2)
+    })
   }, [soundOn])
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -294,15 +339,10 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
       setEdgeStates(prev => ({ ...prev, [edgeKey]: "active" }))
       setNodeStates(prev => ({ ...prev, [toId]: "active" }))
 
-      if (toNode?.type === "stop") {
-        playTick("stop")
-      } else if (toNode?.type === "warehouse") {
-        playTick("warehouse")
-      } else {
-        playTick("intersection")
-      }
+      // Play algorithm beep when edge STARTS drawing
+      playAlgoBeep(i + 1, routePath.length)
 
-      await sleep(speed)
+      await sleep(100) // Edge animation time: 100ms per edge
 
       // Mark as visited
       const isReturn = graphEdges.find(e => e.from === fromId && e.to === toId)?.isReturn
@@ -317,8 +357,12 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
         setNodeStates(prev => ({ ...prev, [toId]: "visited" }))
       }
     }
+    
+    // Play completion chord when route finishes
+    playCompletionChord()
+    
     setIsPlaying(false)
-  }, [speed, playTick])
+  }, [speed, playAlgoBeep, playCompletionChord])
 
   const resetAnimation = useCallback(() => {
     setEdgeStates({})
@@ -328,8 +372,8 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
 
   if (!isMounted || !L) {
     return (
-      <div className="relative flex h-full w-full items-center justify-center bg-[#0B0F1C]">
-        <div className="text-[#5570A0]">Loading map...</div>
+      <div className="relative flex h-full w-full items-center justify-center bg-background">
+        <div className="text-muted-foreground">Loading map...</div>
       </div>
     )
   }
@@ -342,7 +386,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
         <div style="
           width: 28px;
           height: 28px;
-          background: ${isSelected ? "#F5A623" : "#C8102E"};
+          background: ${isSelected ? "var(--amber)" : "var(--red)"};
           border-radius: 50%;
           display: flex;
           align-items: center;
@@ -350,8 +394,8 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
           color: white;
           font-weight: bold;
           font-size: 12px;
-          border: 2px solid ${isSelected ? "#F5A623" : "#A00D26"};
-          box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+          border: 2px solid ${isSelected ? "var(--amber)" : "var(--red-dark)"};
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         ">${number}</div>
       `,
       iconSize: [28, 28],
@@ -365,16 +409,16 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
       <div style="
         width: 32px;
         height: 32px;
-        background: #F5A623;
+        background: var(--amber);
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #0B0F1C;
+        color: var(--black);
         font-weight: bold;
         font-size: 14px;
-        border: 2px solid #D4940F;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        border: 2px solid var(--amber);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       ">W</div>
     `,
     iconSize: [32, 32],
@@ -398,13 +442,13 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
   return (
     <div className="relative h-full w-full">
       {/* View Toggle */}
-      <div className="absolute left-1/2 top-3 z-[1000] flex -translate-x-1/2 overflow-hidden rounded-lg border border-[#1E2A45] bg-[#1A2340]">
+      <div className="absolute left-1/2 top-3 z-[1000] flex -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-card">
         <button
           onClick={() => setViewMode("map")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             viewMode === "map"
-              ? "bg-[#C8102E] text-white"
-              : "text-[#7A90C0] hover:text-white"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <Map className="h-4 w-4" />
@@ -414,8 +458,8 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
           onClick={() => setViewMode("graph")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             viewMode === "graph"
-              ? "bg-[#C8102E] text-white"
-              : "text-[#7A90C0] hover:text-white"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <GitBranch className="h-4 w-4" />
@@ -425,7 +469,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
 
       {/* DFS Controls */}
       {viewMode === "graph" && (
-        <div className="absolute right-3 top-3 z-[1000] flex flex-col gap-2 rounded-lg border border-[#1E2A45] bg-[#10162A]/95 p-3 backdrop-blur-sm">
+        <div className="absolute right-3 top-3 z-[1000] flex flex-col gap-2 rounded-lg border border-border bg-card/95 p-3 backdrop-blur-sm">
           {/* Play/Reset buttons */}
           <div className="flex gap-2">
             <button
@@ -433,8 +477,8 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
               disabled={isPlaying}
               className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isPlaying
-                  ? "cursor-not-allowed bg-[#1E2A45] text-[#5570A0]"
-                  : "bg-[#C8102E] text-white hover:bg-[#A00D26]"
+                  ? "cursor-not-allowed bg-muted text-muted-foreground"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
               }`}
             >
               <Play className="h-4 w-4" />
@@ -442,7 +486,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
             </button>
             <button
               onClick={resetAnimation}
-              className="flex items-center justify-center rounded-lg border border-[#1E2A45] px-3 py-2 text-[#7A90C0] transition-colors hover:border-[#5570A0] hover:text-white"
+              className="flex items-center justify-center rounded-lg border border-border px-3 py-2 text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
             >
               <RotateCw className="h-4 w-4" />
             </button>
@@ -451,31 +495,31 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
           {/* Speed selector */}
           <div className="flex gap-1">
             <button
-              onClick={() => setSpeed(800)}
+              onClick={() => setSpeed(300)}
               className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                speed === 800
-                  ? "bg-[#C8102E] text-white"
-                  : "bg-[#1E2A45] text-[#7A90C0] hover:text-white"
+                speed === 300
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               Lent
             </button>
             <button
-              onClick={() => setSpeed(400)}
+              onClick={() => setSpeed(150)}
               className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                speed === 400
-                  ? "bg-[#C8102E] text-white"
-                  : "bg-[#1E2A45] text-[#7A90C0] hover:text-white"
+                speed === 150
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               Normal
             </button>
             <button
-              onClick={() => setSpeed(150)}
+              onClick={() => setSpeed(50)}
               className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                speed === 150
-                  ? "bg-[#C8102E] text-white"
-                  : "bg-[#1E2A45] text-[#7A90C0] hover:text-white"
+                speed === 50
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               Rapid
@@ -487,8 +531,8 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
             onClick={() => setSoundOn(!soundOn)}
             className={`flex items-center justify-center gap-2 rounded-lg py-1.5 text-xs transition-colors ${
               soundOn
-                ? "bg-[#1E2A45] text-white"
-                : "border border-[#1E2A45] text-[#5570A0]"
+                ? "bg-muted text-foreground"
+                : "border border-border text-muted-foreground"
             }`}
           >
             {soundOn ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
@@ -545,7 +589,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
             {/* Main route line */}
             <Polyline
               positions={routeCoordinates}
-              color="#C8102E"
+              color="var(--red)"
               weight={3}
               opacity={0.8}
             />
@@ -553,7 +597,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
             {/* Return line (dashed) */}
             <Polyline
               positions={returnCoordinates}
-              color="#F5A623"
+              color="var(--amber)"
               weight={2}
               opacity={0.6}
               dashArray="10, 10"
@@ -580,22 +624,7 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
       </div>
 
       <style jsx global>{`
-        @keyframes pop-in {
-          0% {
-            transform: scale(0);
-            opacity: 0;
-          }
-          70% {
-            transform: scale(1.2);
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-        .animate-pop-in {
-          animation: pop-in 0.3s ease-out forwards;
-        }
+        /* Node animations removed for instant appearance */
       `}</style>
     </div>
   )
@@ -604,15 +633,15 @@ export function RouteMap({ selectedStop, onSelectStop }: RouteMapProps) {
 function StopPopup({ stop }: { stop: Stop }) {
   return (
     <div className="min-w-[200px]">
-      <p className="font-bold text-white">{stop.name}</p>
-      <p className="text-sm text-[#5570A0]">{stop.address}</p>
-      <div className="mt-2 border-t border-[#1E2A45] pt-2">
-        <p className="text-xs text-[#7A90C0]">
+      <p className="font-bold text-foreground">{stop.name}</p>
+      <p className="text-sm text-muted-foreground">{stop.address}</p>
+      <div className="mt-2 border-t border-border pt-2">
+        <p className="text-xs text-muted-foreground">
           {stop.products.references} refs · {stop.products.barrels} barrils · {stop.products.boxes} caixes
         </p>
-        <p className="text-xs text-[#7A90C0]">{stop.timeWindow}</p>
+        <p className="text-xs text-muted-foreground">{stop.timeWindow}</p>
         {stop.returnables && (
-          <span className="mt-1 inline-block rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-400">
+          <span className="mt-1 inline-block rounded-full bg-green-light px-2 py-0.5 text-[10px] text-green">
             {stop.returnables.count} {stop.returnables.type === "barrels" ? "barrils" : "caixes"}
           </span>
         )}
@@ -623,9 +652,9 @@ function StopPopup({ stop }: { stop: Stop }) {
 
 function KPICard({ icon, value }: { icon: React.ReactNode; value: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-[#1E2A45] bg-[#10162A]/90 px-4 py-2 backdrop-blur-sm">
-      <span className="text-[#C8102E]">{icon}</span>
-      <span className="text-sm font-medium text-white">{value}</span>
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-card/90 px-4 py-2 backdrop-blur-sm">
+      <span className="text-primary">{icon}</span>
+      <span className="text-sm font-medium text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>{value}</span>
     </div>
   )
 }

@@ -1,48 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&family=Barlow+Semi+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* DDI Smart Truck Custom Theme */
-  --ddi-background: #0B0F1C;
-  --ddi-surface: #10162A;
-  --ddi-border: #1E2A45;
-  --ddi-primary: #C8102E;
-  --ddi-primary-hover: #A00D26;
-  --ddi-secondary: #F5A623;
-  --ddi-muted: #5570A0;
-  --ddi-text: #F0F4FF;
-  --ddi-text-secondary: #7A90C0;
-  --ddi-card-dark: #151D35;
-  --ddi-pill-bg: #1A2340;
-  --ddi-pill-border: #2A3A5C;
+  /* New Design System Colors */
+  --red: #CC1111;
+  --red-dark: #9A0D0D;
+  --red-light: #F5DADA;
+  --black: #111111;
+  --charcoal: #333333;
+  --gray-mid: #888888;
+  --gray-light: #DDDDDD;
+  --gray-pale: #F5F5F3;
+  --white: #FFFFFF;
+  --amber: #E8961A;
+  --amber-light: #FFF4E0;
+  --green: #1A7A3F;
+  --green-light: #E5F4EB;
+  --blue-info: #1459A8;
+  --blue-light: #E8F0FA;
   
-  --background: var(--ddi-background);
-  --foreground: var(--ddi-text);
-  --card: var(--ddi-surface);
-  --card-foreground: var(--ddi-text);
-  --popover: var(--ddi-surface);
-  --popover-foreground: var(--ddi-text);
-  --primary: var(--ddi-primary);
-  --primary-foreground: #ffffff;
-  --secondary: var(--ddi-secondary);
-  --secondary-foreground: #0B0F1C;
-  --muted: var(--ddi-surface);
-  --muted-foreground: var(--ddi-muted);
-  --accent: var(--ddi-surface);
-  --accent-foreground: var(--ddi-text);
-  --destructive: #C8102E;
-  --destructive-foreground: #ffffff;
-  --border: var(--ddi-border);
-  --input: var(--ddi-surface);
-  --ring: var(--ddi-primary);
-  --radius: 0.5rem;
+  /* Typography */
+  --font-title: 'Barlow Condensed', sans-serif;
+  --font-ui: 'Barlow Semi Condensed', sans-serif;
+  --font-data: 'IBM Plex Mono', monospace;
+  
+  /* System variables (mapped to new design system) */
+  --background: var(--gray-pale);
+  --foreground: var(--black);
+  --card: var(--white);
+  --card-foreground: var(--black);
+  --popover: var(--white);
+  --popover-foreground: var(--black);
+  --primary: var(--red);
+  --primary-foreground: var(--white);
+  --secondary: var(--gray-light);
+  --secondary-foreground: var(--black);
+  --muted: var(--gray-light);
+  --muted-foreground: var(--gray-mid);
+  --accent: var(--gray-light);
+  --accent-foreground: var(--black);
+  --destructive: var(--red);
+  --destructive-foreground: var(--white);
+  --border: var(--gray-light);
+  --input: var(--white);
+  --ring: var(--red);
+  --radius: 0.375rem; /* 6px max rounded corners */
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-data);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -62,10 +72,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
 }
 
 @layer base {
@@ -77,25 +87,25 @@
   }
 }
 
-/* Leaflet dark theme overrides */
+/* Leaflet theme overrides */
 .leaflet-container {
-  background: #0B0F1C !important;
+  background: var(--white) !important;
 }
 
 .leaflet-popup-content-wrapper {
-  background: #10162A !important;
-  border: 1px solid #1E2A45 !important;
-  border-radius: 8px !important;
+  background: var(--white) !important;
+  border: 1px solid var(--gray-light) !important;
+  border-radius: 6px !important;
 }
 
 .leaflet-popup-content {
-  color: #F0F4FF !important;
+  color: var(--black) !important;
   margin: 12px 16px !important;
 }
 
 .leaflet-popup-tip {
-  background: #10162A !important;
-  border: 1px solid #1E2A45 !important;
+  background: var(--white) !important;
+  border: 1px solid var(--gray-light) !important;
 }
 
 .leaflet-control-zoom {
@@ -103,13 +113,13 @@
 }
 
 .leaflet-control-zoom a {
-  background: #10162A !important;
-  color: #F0F4FF !important;
-  border: 1px solid #1E2A45 !important;
+  background: var(--white) !important;
+  color: var(--black) !important;
+  border: 1px solid var(--gray-light) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: #151D35 !important;
+  background: var(--gray-light) !important;
 }
 
 /* Custom scrollbar */
@@ -118,14 +128,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F1C;
+  background: var(--gray-light);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E2A45;
+  background: var(--gray-mid);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2A3A5C;
+  background: var(--charcoal);
 }

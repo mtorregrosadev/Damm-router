@@ -21,34 +21,23 @@ Salida (dict):
 """
 
 import asyncio
-import sqlite3
-from pathlib import Path
-
 from truck_loader import cargar_camion, CAMION_COLS, CAMION_FILAS, PALET_CAP
 from mongo import get_db
 
-DB_PATH = Path(__file__).parent.parent / "hackaton.db"
 CAPACIDAD_CAMION = CAMION_COLS * CAMION_FILAS * PALET_CAP  # 360 cajas
 
 
 # ─── Helpers síncronos (se ejecutan en threads para no bloquear el loop) ──────
 
 def _cajas_parada(transporte: str, id_parada: str) -> int:
-    """Consulta SQLite: total de cajas de una parada en un transporte."""
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        row = conn.execute(
-            """
-            SELECT COALESCE(SUM(CAST(cantidad_entrega AS REAL)), 0)
-            FROM detalle_entrega
-            WHERE destinatario_mc_a_1 = ?
-              AND transporte           = ?
-            """,
-            (id_parada, transporte),
-        ).fetchone()
-        return max(1, int(row[0]))
-    finally:
-        conn.close()
+    """Consulta MongoDB: total de cajas de una parada en un transporte."""
+    pipeline = [
+        {"$match": {"destinatario_mc_a_1": id_parada, "transporte": transporte}},
+        {"$group": {"_id": None, "total": {"$sum": {"$toDouble": "$cantidad_entrega"}}}},
+    ]
+    result = list(get_db()["detalle_entrega"].aggregate(pipeline))
+    total = result[0]["total"] if result else 0
+    return max(1, int(total))
 
 
 def _dividir_en_camiones(

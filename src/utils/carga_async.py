@@ -71,7 +71,7 @@ def _matrices_camion(grupo: list[tuple[str, int]], offset_orden: int) -> dict:
     paradas_local = list(range(1, len(grupo) + 1))
     cajas_local   = {i + 1: cajas for i, (_, cajas) in enumerate(grupo)}
 
-    p_bin, p_ids_local, t_bin, t_ids_local = cargar_camion(paradas_local, cajas_local)
+    p_ids_local, t_ids_local = cargar_camion(paradas_local, cajas_local)
 
     # Traducir IDs locales (1..N) → orden global en la ruta
     import numpy as np
@@ -83,12 +83,10 @@ def _matrices_camion(grupo: list[tuple[str, int]], offset_orden: int) -> dict:
         p_ids[p_ids_local == local] = global_orden
 
     total = sum(cajas_local.values())
-    n_palets = int((p_bin.sum(axis=(1, 2, 3)) > 0).sum())
+    n_palets = int(((p_ids_local > 0).sum(axis=(1, 2, 3)) > 0).sum())
 
     return {
-        "camion_binario": t_bin.tolist(),
         "camion_ids":     t_ids.tolist(),
-        "palets_binario": p_bin.tolist(),
         "palets_ids":     p_ids.tolist(),
         "n_palets_usados": n_palets,
         "n_cajas":         total,

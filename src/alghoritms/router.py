@@ -583,7 +583,10 @@ def obtenir_geometria_ruta(ruta_indices, solution, routing, manager,
     parades_ruta = []
 
     for step, node_idx in enumerate(ruta_indices):
-        index  = manager.NodeToIndex(node_idx)
+        if node_idx == 0 and step > 0:
+            index = routing.End(0)
+        else:
+            index = manager.NodeToIndex(node_idx)
         hora_s = solution.Value(time_dimension.CumulVar(index))
 
         if node_idx == 0:
@@ -674,7 +677,10 @@ def mostrar_resultat(ruta_indices, solution, routing, manager,
     step_real = 0
 
     for step, node_idx in enumerate(ruta_indices):
-        index   = manager.NodeToIndex(node_idx)
+        if node_idx == 0 and step > 0:
+            index = routing.End(0)
+        else:
+            index = manager.NodeToIndex(node_idx)
         temps_s = solution.Value(time_dimension.CumulVar(index))
         hora    = _segons_a_hhmm(temps_s)
 
@@ -726,7 +732,7 @@ def mostrar_resultat(ruta_indices, solution, routing, manager,
                 print(f"    - {nom_c} (pen: {pen})")
 
     temps_total_s = solution.Value(
-        time_dimension.CumulVar(manager.NodeToIndex(ruta_indices[-1]))
+        time_dimension.CumulVar(routing.End(0))
     )
     print(f"\n  Clients visitats:  {clients_visitats}/{len(parades_df)}")
     print(f"  Clients saltats:   {clients_saltats}")

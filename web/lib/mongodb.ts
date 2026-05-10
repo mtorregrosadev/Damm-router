@@ -62,8 +62,7 @@ export async function getDb(): Promise<Db | null> {
   
   try {
     const mongoClient = await clientPromise
-    // Extract database name from URI or use default
-    const dbName = new URL(uri).pathname.slice(1) || "dam-base"
+    const dbName = process.env.MONGODB_DB || new URL(uri).pathname.slice(1) || "damm-base"
     return mongoClient.db(dbName)
   } catch (error) {
     console.error("[v0] MongoDB connection error:", error)

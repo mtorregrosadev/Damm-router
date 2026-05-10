@@ -39,6 +39,12 @@ interface Translations {
   // Stops
   stops: {
     return: string
+    outOfWindow: string
+    sharedStop: string
+    unloadTime: string
+    skipped: string
+    loadingRoute: string
+    noData: string
   }
 }
 
@@ -73,6 +79,15 @@ const translations: Record<Language, Translations> = {
       products: "productes",
       warehouse: "MAGATZEM DDI MOLLET",
     },
+    stops: {
+      return: "Retorn al magatzem",
+      outOfWindow: "Fora de franja",
+      sharedStop: "Parada compartida",
+      unloadTime: "min descàrrega",
+      skipped: "saltats",
+      loadingRoute: "Carregant ruta…",
+      noData: "Cap ruta calculada",
+    },
   },
   en: {
     login: {
@@ -103,6 +118,15 @@ const translations: Record<Language, Translations> = {
       timeWindow: "Time window",
       products: "products",
       warehouse: "DDI MOLLET WAREHOUSE",
+    },
+    stops: {
+      return: "Return to warehouse",
+      outOfWindow: "Out of window",
+      sharedStop: "Shared stop",
+      unloadTime: "min unload",
+      skipped: "skipped",
+      loadingRoute: "Loading route…",
+      noData: "No route computed",
     },
   },
 }

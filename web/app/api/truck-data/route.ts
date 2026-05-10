@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       )
     }
     
-    const collection = db.collection("resultados")
+    const collection = db.collection(process.env.MONGODB_COLLECTION_RESULTADOS || 'resultados')
 
     // Find document by id_ruta_algoritmo or get the first one as fallback
     const doc = rutaId

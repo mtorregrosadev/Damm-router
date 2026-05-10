@@ -51,7 +51,7 @@ CAMION_FILAS: int = 3  # palets a lo largo del camión
 def llenar_palets(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """
     Rellena los palets respetando el orden de descarga vertical.
 
@@ -67,13 +67,11 @@ def llenar_palets(
         cajas_por_parada: {id_parada: num_cajas}
 
     Returns:
-        binario (N_palets, X, Y, Z): 1 donde hay caja, 0 vacío
-        ids     (N_palets, X, Y, Z): ID de parada en cada posición ocupada
+        ids     (N_palets, X, Y, Z): ID de parada en cada posición ocupada (0 para vacío)
     """
     total = sum(cajas_por_parada.values())
     n_palets = ceil(total / PALET_CAP)
 
-    binario = np.zeros((n_palets, PALET_X, PALET_Y, PALET_Z), dtype=np.int32)
     ids = np.zeros((n_palets, PALET_X, PALET_Y, PALET_Z), dtype=np.int32)
 
     p, x, y, z = 0, 0, 0, 0
@@ -81,7 +79,6 @@ def llenar_palets(
     for id_parada in reversed(paradas):   # última parada → fondo del palet
         restantes = cajas_por_parada[id_parada]
         while restantes > 0:
-            binario[p, x, y, z] = 1
             ids[p, x, y, z] = id_parada
             restantes -= 1
 
@@ -96,7 +93,7 @@ def llenar_palets(
                 p += 1
                 x, y, z = 0, 0, 0
 
-    return binario, ids
+    return ids
 
 
 # ─── Fase 2: Emparejamiento de palets por fila (optimización lateral) ─────────
@@ -151,11 +148,10 @@ def emparejar_palets(ids: np.ndarray) -> List[Tuple[int, Optional[int]]]:
 # ─── Fase 3: Ensamblado en matrices del camión ───────────────────────────────
 
 def ensamblar_camion(
-    binario: np.ndarray,
     ids: np.ndarray,
     cols: int = CAMION_COLS,
     filas: int = CAMION_FILAS,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """
     Construye las matrices 3D completas del camión a partir de los palets.
 
@@ -170,14 +166,12 @@ def ensamblar_camion(
     Cada fila recibe los dos palets del mismo pedido (emparejados en Fase 2).
 
     Returns:
-        camion_bin (cols*X, filas*Y, Z): 0/1
-        camion_ids (cols*X, filas*Y, Z): ID de parada
+        camion_ids (cols*X, filas*Y, Z): ID de parada (0 donde está vacío)
     """
     tx = cols * PALET_X
     ty = filas * PALET_Y
     tz = PALET_Z
 
-    camion_bin = np.zeros((tx, ty, tz), dtype=np.int32)
     camion_ids = np.zeros((tx, ty, tz), dtype=np.int32)
 
     pares = emparejar_palets(ids)
@@ -189,16 +183,14 @@ def ensamblar_camion(
 
         # Lateral izquierdo (col 0)
         xo_izq = 0
-        camion_bin[xo_izq:xo_izq + PALET_X, yo:yo + PALET_Y, :] = binario[idx_izq]
         camion_ids[xo_izq:xo_izq + PALET_X, yo:yo + PALET_Y, :] = ids[idx_izq]
 
         # Lateral derecho (col 1)
         if idx_der is not None:
             xo_der = PALET_X
-            camion_bin[xo_der:xo_der + PALET_X, yo:yo + PALET_Y, :] = binario[idx_der]
             camion_ids[xo_der:xo_der + PALET_X, yo:yo + PALET_Y, :] = ids[idx_der]
 
-    return camion_bin, camion_ids
+    return camion_ids
 
 
 # ─── Pipeline principal ───────────────────────────────────────────────────────
@@ -206,15 +198,13 @@ def ensamblar_camion(
 def cargar_camion(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Pipeline completo: llenar → emparejar → ensamblar.
 
     Returns:
-        palet_bin  (N, 4, 5, 3): matriz binaria por palet
-        palet_ids  (N, 4, 5, 3): IDs de parada por palet
-        camion_bin (8, 15, 3):   matriz binaria del camión completo
-        camion_ids (8, 15, 3):   IDs de parada del camión completo
+        palet_ids  (N, 4, 3, 5): IDs de parada por palet 
+        camion_ids (8, 9, 5):   IDs de parada del camión completo
     """
     capacidad_total = CAMION_COLS * CAMION_FILAS * PALET_CAP
     total_cajas = sum(cajas_por_parada.values())
@@ -224,9 +214,9 @@ def cargar_camion(
             f"Overflow: {total_cajas} cajas > capacidad del camión {capacidad_total}"
         )
 
-    p_bin, p_ids = llenar_palets(paradas, cajas_por_parada)
-    t_bin, t_ids = ensamblar_camion(p_bin, p_ids)
-    return p_bin, p_ids, t_bin, t_ids
+    p_ids = llenar_palets(paradas, cajas_por_parada)
+    t_ids = ensamblar_camion(p_ids)
+    return p_ids, t_ids
 
 
 # ─── Utilidades de visualización ─────────────────────────────────────────────
@@ -234,12 +224,11 @@ def cargar_camion(
 def resumen(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
-    p_bin: np.ndarray,
     p_ids: np.ndarray,
 ) -> None:
     """Imprime el plan de carga adaptado a apertura lateral."""
     total = sum(cajas_por_parada.values())
-    n_palets = len(p_bin)
+    n_palets = len(p_ids)
     pares = emparejar_palets(p_ids)
 
     print("=" * 65)
@@ -259,7 +248,7 @@ def resumen(
                 return "  [  VACÍO  ]           "
             vals = p_ids[idx][p_ids[idx] > 0]
             stops = sorted(int(v) for v in np.unique(vals))
-            n_cajas = int(np.sum(p_bin[idx]))
+            n_cajas = int(np.sum(p_ids[idx] > 0))
             return f"  Pal {idx} stops={stops} {n_cajas}/{PALET_CAP}c"
 
         izq_desc = _desc(idx_izq)
@@ -321,11 +310,11 @@ if __name__ == "__main__":
         4: 40,   # cuarta entrega
     }
 
-    p_bin, p_ids, t_bin, t_ids = cargar_camion(paradas, cajas)
+    p_ids, t_ids = cargar_camion(paradas, cajas)
 
-    resumen(paradas, cajas, p_bin, p_ids)
+    resumen(paradas, cajas, p_ids)
 
-    for i in range(len(p_bin)):
+    for i in range(len(p_ids)):
         ver_palet(p_ids, i)
 
     for z in range(PALET_Z):

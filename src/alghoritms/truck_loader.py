@@ -1,33 +1,17 @@
 """
 Sistema de optimización de carga de camiones con matrices 3D.
-Adaptado para camión Estrella Damm con APERTURA LATERAL (ambos lados).
+Camión Estrella Damm — APERTURA LATERAL (ambos lados).
 
-╔══════════════════════════════════════════════════════════════╗
-║  MODELO DE ACCESO — APERTURA LATERAL                        ║
-║                                                              ║
-║  LATERAL IZQUIERDO          LATERAL DERECHO                 ║
-║  ← acceso                          acceso →                 ║
-║  ┌──────────┬──────────┐                                    ║
-║  │  col 0   │  col 1   │                                    ║
-║  │ [Palet A]│[Palet B] │  fila 0                           ║
-║  │ [Palet C]│[Palet D] │  fila 1                           ║
-║  │ [Palet E]│[Palet F] │  fila 2                           ║
-║  └──────────┴──────────┘                                    ║
-║                                                              ║
-║  Con apertura lateral, TODOS los palets son igualmente      ║
-║  accesibles desde cualquiera de los dos lados.              ║
-║  El criterio de optimización cambia:                        ║
-║    → Agrupar palets del mismo pedido en la misma FILA       ║
-║    → Permite descargar ambos lados a la vez (col0 + col1)   ║
-║                                                              ║
-║  Lo que NO cambia: ordenación VERTICAL dentro de cada palet ║
-║    z=0 (suelo) = paradas tardías (últimas en descargar)     ║
-║    z=2 (techo) = paradas tempranas (primeras en descargar)  ║
-╚══════════════════════════════════════════════════════════════╝
+Doble matriz por posición:
+  tipo  → 0=vacío  1=caja  2=barril  3=CJ13 (caja vacía cargada en ruta)
+  ids   → 0=vacío  N=parada propietaria
 
 Dimensiones:
-  Palet:  X=4 × Y=3 × Z=5 (alto) = 60 cajas
-  Camión: 2 columnas × 3 filas = 6 palets = 360 cajas
+  Palet:  X=4 × Y=3 × Z=5 = 60 unidades
+  Camión: 2 columnas × 3 filas = 6 palets = 360 unidades
+
+Restricción física: ningún barril puede estar encima de una caja
+en la misma columna (x, y). Garantizado por algoritmo de doble pasada.
 """
 
 import numpy as np
@@ -39,11 +23,33 @@ from typing import List, Dict, Tuple, Optional
 
 PALET_X: int = 4
 PALET_Y: int = 3
-PALET_Z: int = 5   # alto — el único que importa para el orden de descarga
-PALET_CAP: int = PALET_X * PALET_Y * PALET_Z  # 60 cajas
+PALET_Z: int = 5
+PALET_CAP: int = PALET_X * PALET_Y * PALET_Z  # 60
 
-CAMION_COLS: int = 2   # palets lado a lado (izquierdo / derecho)
-CAMION_FILAS: int = 3  # palets a lo largo del camión
+CAMION_COLS: int = 2
+CAMION_FILAS: int = 3
+
+TIPO_VACIO:  int = 0
+TIPO_CAJA:   int = 1
+TIPO_BARRIL: int = 2
+TIPO_CJ13:   int = 3
+
+
+# ─── Avance de posición ───────────────────────────────────────────────────────
+
+def _avanzar(p: int, x: int, y: int, z: int) -> Tuple[int, int, int, int]:
+    """Avanza una posición en orden x→y→z→siguiente palet."""
+    x += 1
+    if x == PALET_X:
+        x = 0
+        y += 1
+    if y == PALET_Y:
+        y = 0
+        z += 1
+    if z == PALET_Z:
+        p += 1
+        x, y, z = 0, 0, 0
+    return p, x, y, z
 
 
 # ─── Fase 1: Llenado de palets ────────────────────────────────────────────────
@@ -51,128 +57,165 @@ CAMION_FILAS: int = 3  # palets a lo largo del camión
 def llenar_palets(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
-) -> np.ndarray:
+    barriles_por_parada: Dict[int, int],
+    cj13_por_parada: Optional[Dict[int, int]] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Rellena los palets respetando el orden de descarga vertical.
+    Rellena los palets con doble pasada: barriles primero, cajas después.
 
-    Regla invariante: dentro de cualquier columna (x, y) de un palet,
-    el ID de parada es NO CRECIENTE de z=0 a z=2.
-    Esto garantiza que las cajas de paradas tempranas siempre quedan
-    encima de las de paradas tardías, independientemente del acceso lateral.
+    Garantía física: en cualquier columna (x, y), todos los barriles tienen
+    z ≤ z de todas las cajas → nunca un barril encima de una caja.
 
-    Orden de avance de posición: x → y → z → siguiente palet
+    Garantía logística: dentro de cada tipo, última parada → z bajo
+    (fondo, descarga tardía) y primera parada → z alto (techo, 1ª descarga).
 
-    Args:
-        paradas:          IDs de parada en orden de entrega [1, 2, ..., N]
-        cajas_por_parada: {id_parada: num_cajas}
+    CJ13: posiciones vacías, preferiblemente adyacentes a posiciones de
+    paradas anteriores (zonas que estarán libres cuando llegue esa parada).
 
     Returns:
-        ids     (N_palets, X, Y, Z): ID de parada en cada posición ocupada (0 para vacío)
+        tipo (N_palets, X, Y, Z): 0/1/2/3
+        ids  (N_palets, X, Y, Z): ID de parada (0 = vacío)
     """
-    total = sum(cajas_por_parada.values())
-    n_palets = ceil(total / PALET_CAP)
+    if cj13_por_parada is None:
+        cj13_por_parada = {}
 
-    ids = np.zeros((n_palets, PALET_X, PALET_Y, PALET_Z), dtype=np.int32)
+    total_entrega = (sum(cajas_por_parada.values())
+                     + sum(barriles_por_parada.values()))
+    total_cj13 = sum(cj13_por_parada.values())
+    total = total_entrega + total_cj13
+    n_palets = max(1, ceil(total / PALET_CAP))
+
+    tipo = np.zeros((n_palets, PALET_X, PALET_Y, PALET_Z), dtype=np.int32)
+    ids  = np.zeros((n_palets, PALET_X, PALET_Y, PALET_Z), dtype=np.int32)
 
     p, x, y, z = 0, 0, 0, 0
 
-    for id_parada in reversed(paradas):   # última parada → fondo del palet
-        restantes = cajas_por_parada[id_parada]
+    # Pasada A — barriles (última parada → posición más baja, z=0)
+    for id_parada in reversed(paradas):
+        restantes = barriles_por_parada.get(id_parada, 0)
         while restantes > 0:
-            ids[p, x, y, z] = id_parada
+            tipo[p, x, y, z] = TIPO_BARRIL
+            ids[p, x, y, z]  = id_parada
             restantes -= 1
+            p, x, y, z = _avanzar(p, x, y, z)
 
-            x += 1
-            if x == PALET_X:
-                x = 0
-                y += 1
-            if y == PALET_Y:
-                y = 0
-                z += 1
-            if z == PALET_Z:
-                p += 1
-                x, y, z = 0, 0, 0
+    # Pasada B — cajas (continúan desde donde dejaron los barriles)
+    for id_parada in reversed(paradas):
+        restantes = cajas_por_parada.get(id_parada, 0)
+        while restantes > 0:
+            tipo[p, x, y, z] = TIPO_CAJA
+            ids[p, x, y, z]  = id_parada
+            restantes -= 1
+            p, x, y, z = _avanzar(p, x, y, z)
 
-    return ids
+    # Fase CJ13
+    if cj13_por_parada:
+        _colocar_cj13(tipo, ids, paradas, cj13_por_parada)
+
+    return tipo, ids
 
 
-# ─── Fase 2: Emparejamiento de palets por fila (optimización lateral) ─────────
+def _colocar_cj13(
+    tipo: np.ndarray,
+    ids: np.ndarray,
+    paradas: List[int],
+    cj13_por_parada: Dict[int, int],
+) -> None:
+    """Marca posiciones vacías con CJ13. Modifica tipo e ids in-place."""
+    n_palets, PX, PY, PZ = tipo.shape
+
+    for k_idx, stop_k in enumerate(paradas):
+        n_cj13 = cj13_por_parada.get(stop_k, 0)
+        if n_cj13 == 0:
+            continue
+
+        paradas_anteriores = set(paradas[:k_idx])
+        preferidos: List[Tuple] = []
+        fallback:   List[Tuple] = []
+
+        for pp in range(n_palets):
+            for xx in range(PX):
+                for yy in range(PY):
+                    for zz in range(PZ):
+                        if tipo[pp, xx, yy, zz] != TIPO_VACIO:
+                            continue
+                        if _tiene_vecino_anterior(
+                            ids, pp, xx, yy, zz, n_palets, PX, PY, PZ,
+                            paradas_anteriores
+                        ):
+                            preferidos.append((pp, xx, yy, zz))
+                        else:
+                            fallback.append((pp, xx, yy, zz))
+
+        colocados = 0
+        for pos in preferidos + fallback:
+            if colocados >= n_cj13:
+                break
+            pp, xx, yy, zz = pos
+            if tipo[pp, xx, yy, zz] == TIPO_VACIO:
+                tipo[pp, xx, yy, zz] = TIPO_CJ13
+                ids[pp, xx, yy, zz]  = stop_k
+                colocados += 1
+
+
+def _tiene_vecino_anterior(
+    ids: np.ndarray,
+    p: int, x: int, y: int, z: int,
+    n_palets: int, PX: int, PY: int, PZ: int,
+    paradas_anteriores: set,
+) -> bool:
+    for dp, dx, dy, dz in [
+        (0,1,0,0),(0,-1,0,0),(0,0,1,0),(0,0,-1,0),(0,0,0,1),(0,0,0,-1),
+    ]:
+        np_, nx, ny, nz = p+dp, x+dx, y+dy, z+dz
+        if (0 <= np_ < n_palets and 0 <= nx < PX
+                and 0 <= ny < PY and 0 <= nz < PZ):
+            if ids[np_, nx, ny, nz] in paradas_anteriores:
+                return True
+    return False
+
+
+# ─── Fase 2: Emparejamiento de palets por fila ────────────────────────────────
 
 def _info_palet(ids_palet: np.ndarray) -> Tuple[int, int, float]:
-    """
-    Devuelve (stop_minimo, stop_dominante, media_ponderada) de un palet.
-    stop_minimo    = parada más temprana que contiene (prioridad de acceso).
-    stop_dominante = parada con más cajas (identidad del palet).
-    """
     vals = ids_palet[ids_palet > 0]
     if len(vals) == 0:
         return (9999, 9999, 9999.0)
     unique, counts = np.unique(vals, return_counts=True)
-    stop_min = int(unique.min())
-    stop_dom = int(unique[np.argmax(counts)])
-    media = float(np.mean(vals))
-    return stop_min, stop_dom, media
+    return int(unique.min()), int(unique[np.argmax(counts)]), float(np.mean(vals))
 
 
 def emparejar_palets(ids: np.ndarray) -> List[Tuple[int, Optional[int]]]:
-    """
-    Fase 2 — exclusiva de apertura lateral.
-
-    Agrupa los palets en pares (lateral_izquierdo, lateral_derecho) para
-    maximizar la descarga simultánea por ambos lados en cada parada.
-
-    Estrategia:
-      1. Ordenar palets por (stop_mínimo_presente, stop_dominante, media)
-         → los palets con entregas más tempranas quedan primero
-      2. Emparejar de 2 en 2: cada par ocupa una fila del camión
-         → los dos palets de la misma fila idealmente pertenecen al mismo stop
-
-    Returns:
-        Lista de tuplas (idx_palet_col0, idx_palet_col1 | None) por fila.
-    """
-    n = len(ids)
-    info = [(i, *_info_palet(ids[i])) for i in range(n)]
-    # Ordenar: stop_min ASC, luego stop_dom ASC, luego media ASC
+    """Agrupa palets en pares (col0, col1) optimizando descarga simultánea."""
+    info = [(i, *_info_palet(ids[i])) for i in range(len(ids))]
     info.sort(key=lambda t: (t[1], t[2], t[3]))
-
-    pares: List[Tuple[int, Optional[int]]] = []
     indices = [t[0] for t in info]
+    pares: List[Tuple[int, Optional[int]]] = []
     for i in range(0, len(indices), 2):
-        izq = indices[i]
-        der = indices[i + 1] if i + 1 < len(indices) else None
-        pares.append((izq, der))
-
+        pares.append((indices[i], indices[i+1] if i+1 < len(indices) else None))
     return pares
 
 
 # ─── Fase 3: Ensamblado en matrices del camión ───────────────────────────────
 
 def ensamblar_camion(
+    tipo: np.ndarray,
     ids: np.ndarray,
     cols: int = CAMION_COLS,
     filas: int = CAMION_FILAS,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Construye las matrices 3D completas del camión a partir de los palets.
-
-    Disposición con apertura lateral (vista desde arriba):
-
-        LATERAL IZQ      LATERAL DER
-           col 0            col 1
-    fila 0 [Pal A]  ←→  [Pal B]   ← misma fila = descarga simultánea
-    fila 1 [Pal C]  ←→  [Pal D]
-    fila 2 [Pal E]  ←→  [Pal F]
-
-    Cada fila recibe los dos palets del mismo pedido (emparejados en Fase 2).
+    Ensambla los palets en las matrices 3D del camión completo.
 
     Returns:
-        camion_ids (cols*X, filas*Y, Z): ID de parada (0 donde está vacío)
+        camion_tipo (cols*X, filas*Y, Z)
+        camion_ids  (cols*X, filas*Y, Z)
     """
-    tx = cols * PALET_X
+    tx = cols  * PALET_X
     ty = filas * PALET_Y
-    tz = PALET_Z
 
-    camion_ids = np.zeros((tx, ty, tz), dtype=np.int32)
+    camion_tipo = np.zeros((tx, ty, PALET_Z), dtype=np.int32)
+    camion_ids  = np.zeros((tx, ty, PALET_Z), dtype=np.int32)
 
     pares = emparejar_palets(ids)
 
@@ -181,16 +224,14 @@ def ensamblar_camion(
             break
         yo = fila * PALET_Y
 
-        # Lateral izquierdo (col 0)
-        xo_izq = 0
-        camion_ids[xo_izq:xo_izq + PALET_X, yo:yo + PALET_Y, :] = ids[idx_izq]
+        camion_tipo[0:PALET_X, yo:yo+PALET_Y, :]          = tipo[idx_izq]
+        camion_ids [0:PALET_X, yo:yo+PALET_Y, :]          = ids [idx_izq]
 
-        # Lateral derecho (col 1)
         if idx_der is not None:
-            xo_der = PALET_X
-            camion_ids[xo_der:xo_der + PALET_X, yo:yo + PALET_Y, :] = ids[idx_der]
+            camion_tipo[PALET_X:2*PALET_X, yo:yo+PALET_Y, :] = tipo[idx_der]
+            camion_ids [PALET_X:2*PALET_X, yo:yo+PALET_Y, :] = ids [idx_der]
 
-    return camion_ids
+    return camion_tipo, camion_ids
 
 
 # ─── Pipeline principal ───────────────────────────────────────────────────────
@@ -198,124 +239,117 @@ def ensamblar_camion(
 def cargar_camion(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
-) -> Tuple[np.ndarray, np.ndarray]:
+    barriles_por_parada: Dict[int, int],
+    cj13_por_parada: Optional[Dict[int, int]] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Pipeline completo: llenar → emparejar → ensamblar.
 
-    Returns:
-        palet_ids  (N, 4, 3, 5): IDs de parada por palet 
-        camion_ids (8, 9, 5):   IDs de parada del camión completo
-    """
-    capacidad_total = CAMION_COLS * CAMION_FILAS * PALET_CAP
-    total_cajas = sum(cajas_por_parada.values())
+    Args:
+        paradas:             IDs en orden de entrega [1, 2, ..., N]
+        cajas_por_parada:    {id_parada: num_cajas}
+        barriles_por_parada: {id_parada: num_barriles}
+        cj13_por_parada:     {id_parada: num_cajas_vacias}  (opcional)
 
-    if total_cajas > capacidad_total:
+    Returns:
+        palet_tipo  (N, X, Y, Z): uso interno
+        palet_ids   (N, X, Y, Z): uso interno
+        camion_tipo (8, 9, 5):    sale a la web
+        camion_ids  (8, 9, 5):    sale a la web
+    """
+    capacidad = CAMION_COLS * CAMION_FILAS * PALET_CAP
+    total = (sum(cajas_por_parada.values())
+             + sum(barriles_por_parada.values())
+             + sum((cj13_por_parada or {}).values()))
+
+    if total > capacidad:
         raise ValueError(
-            f"Overflow: {total_cajas} cajas > capacidad del camión {capacidad_total}"
+            f"Overflow: {total} unidades > capacidad del camión {capacidad}"
         )
 
-    p_ids = llenar_palets(paradas, cajas_por_parada)
-    t_ids = ensamblar_camion(p_ids)
-    return p_ids, t_ids
+    p_tipo, p_ids = llenar_palets(
+        paradas, cajas_por_parada, barriles_por_parada, cj13_por_parada
+    )
+    t_tipo, t_ids = ensamblar_camion(p_tipo, p_ids)
+    return p_tipo, p_ids, t_tipo, t_ids
 
 
 # ─── Utilidades de visualización ─────────────────────────────────────────────
 
+_SIM = {TIPO_VACIO: '·', TIPO_CAJA: 'C', TIPO_BARRIL: 'B', TIPO_CJ13: 'V'}
+
+
+def ver_camion_lateral(
+    camion_tipo: np.ndarray, camion_ids: np.ndarray, z: int
+) -> None:
+    etiquetas = {PALET_Z-1: f"TECHO Z={PALET_Z-1} (1ª descarga)", 0: "SUELO Z=0 (última)"}
+    print(f"\nCamión — {etiquetas.get(z, f'CAPA Z={z}')}")
+    print(f"  {'LAT. IZQ (col 0)':^22}  {'LAT. DER (col 1)':^22}")
+    print("-" * 52)
+    for fila in range(CAMION_FILAS):
+        y0 = fila * PALET_Y
+        print(f"  --- Fila {fila} ---")
+        for y in range(PALET_Y):
+            def _render(x_range):
+                return " ".join(
+                    f"{_SIM[camion_tipo[x,y0+y,z]]}{camion_ids[x,y0+y,z]:02d}"
+                    if camion_ids[x,y0+y,z] else "  · "
+                    for x in x_range
+                )
+            print(f"  [{_render(range(PALET_X))}]  [{_render(range(PALET_X,2*PALET_X))}]")
+
+
 def resumen(
     paradas: List[int],
     cajas_por_parada: Dict[int, int],
+    barriles_por_parada: Dict[int, int],
+    cj13_por_parada: Optional[Dict[int, int]],
+    p_tipo: np.ndarray,
     p_ids: np.ndarray,
 ) -> None:
-    """Imprime el plan de carga adaptado a apertura lateral."""
-    total = sum(cajas_por_parada.values())
-    n_palets = len(p_ids)
+    if cj13_por_parada is None:
+        cj13_por_parada = {}
+    total = (sum(cajas_por_parada.values())
+             + sum(barriles_por_parada.values())
+             + sum(cj13_por_parada.values()))
     pares = emparejar_palets(p_ids)
 
     print("=" * 65)
     print("PLAN DE CARGA — CAMIÓN APERTURA LATERAL")
     print("=" * 65)
-    print(f"  Paradas en ruta : {paradas}")
-    print(f"  Total cajas     : {total}")
-    print(f"  Palets usados   : {n_palets} / {CAMION_COLS * CAMION_FILAS}")
-    print(f"  Ocupación       : {100*total/(CAMION_COLS*CAMION_FILAS*PALET_CAP):.1f}%")
+    print(f"  Paradas       : {paradas}")
+    print(f"  Cajas entrega : {sum(cajas_por_parada.values())}")
+    print(f"  Barriles      : {sum(barriles_por_parada.values())}")
+    print(f"  CJ13 recogida : {sum(cj13_por_parada.values())}")
+    print(f"  Total         : {total}")
+    print(f"  Palets usados : {len(p_tipo)} / {CAMION_COLS * CAMION_FILAS}")
+    print(f"  Ocupación     : {100*total/(CAMION_COLS*CAMION_FILAS*PALET_CAP):.1f}%")
     print()
-    print("  LATERAL IZQ (col 0)          LATERAL DER (col 1)")
+    print("  LATERAL IZQ (col 0)              LATERAL DER (col 1)")
     print("-" * 65)
-
     for fila, (idx_izq, idx_der) in enumerate(pares):
         def _desc(idx):
             if idx is None:
-                return "  [  VACÍO  ]           "
+                return "[  VACÍO  ]"
             vals = p_ids[idx][p_ids[idx] > 0]
             stops = sorted(int(v) for v in np.unique(vals))
-            n_cajas = int(np.sum(p_ids[idx] > 0))
-            return f"  Pal {idx} stops={stops} {n_cajas}/{PALET_CAP}c"
-
-        izq_desc = _desc(idx_izq)
-        der_desc = _desc(idx_der)
-        print(f"  Fila {fila}: {izq_desc:<30} {der_desc}")
-
+            nc = int(np.sum(p_tipo[idx] == TIPO_CAJA))
+            nb = int(np.sum(p_tipo[idx] == TIPO_BARRIL))
+            nv = int(np.sum(p_tipo[idx] == TIPO_CJ13))
+            return f"Pal {idx} stops={stops} C={nc} B={nb} V={nv}"
+        print(f"  Fila {fila}: {_desc(idx_izq):<32} {_desc(idx_der)}")
     print("=" * 65)
 
 
-def ver_palet(p_ids: np.ndarray, idx_palet: int) -> None:
-    """Imprime las capas de un palet de arriba (Z=2) a abajo (Z=0)."""
-    print(f"\nPalet {idx_palet} — Z=2 arriba (1ª descarga) → Z=0 abajo (última):")
-    print("-" * 42)
-    for z in range(PALET_Z - 1, -1, -1):
-        nombre = {PALET_Z - 1: f"TECHO Z={PALET_Z-1} (1ª descarga)", 0: "SUELO Z=0 (última)"}.get(
-            z, f"CAPA  Z={z}"
-        )
-        print(f"  {nombre}:")
-        capa = p_ids[idx_palet, :, :, z]
-        for y in range(PALET_Y):
-            fila = " ".join(f"{capa[x, y]:2d}" for x in range(PALET_X))
-            print(f"    y={y}: [{fila}]")
-    print()
-
-
-def ver_camion_lateral(camion_ids: np.ndarray, z: int) -> None:
-    """
-    Imprime una capa Z del camión orientada para apertura lateral.
-
-    Muestra col_izq | col_der por cada fila, reflejando la vista del operario
-    que abre ambos laterales.
-    """
-    nombre_z = {PALET_Z - 1: f"TECHO Z={PALET_Z-1} (1ª descarga)", 0: "SUELO Z=0 (última)"}.get(z, f"CAPA Z={z}")
-    print(f"\nCamión lateral — {nombre_z}")
-    print(f"  {'LAT. IZQ':^20}  {'LAT. DER':^20}")
-    print(f"  {'(col 0)':^20}  {'(col 1)':^20}")
-    print("-" * 48)
-
-    capa = camion_ids[:, :, z]  # (TX, TY)
-    for fila in range(CAMION_FILAS):
-        y0 = fila * PALET_Y
-        print(f"  --- Fila {fila} ---")
-        for y in range(PALET_Y):
-            izq = " ".join(f"{capa[x, y0+y]:2d}" for x in range(PALET_X))
-            der = " ".join(f"{capa[x, y0+y]:2d}" for x in range(PALET_X, 2*PALET_X))
-            print(f"  [{izq}]  [{der}]")
-    print()
-
-
-# ─── Ejemplo de uso ───────────────────────────────────────────────────────────
+# ─── Ejemplo standalone ───────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Escenario con 4 paradas para demostrar el emparejamiento lateral
-    paradas = [1, 2, 3, 4]
-    cajas = {
-        1: 20,   # primera entrega
-        2: 60,   # segunda entrega  (1 palet completo)
-        3: 80,   # tercera entrega  (necesita 2 palets)
-        4: 40,   # cuarta entrega
-    }
+    paradas  = [1, 2, 3, 4]
+    cajas    = {1: 10, 2: 30, 3: 40, 4: 20}
+    barriles = {1:  5, 2:  0, 3: 10, 4:  5}
+    cj13     = {2:  6, 4:  4}
 
-    p_ids, t_ids = cargar_camion(paradas, cajas)
-
-    resumen(paradas, cajas, p_ids)
-
-    for i in range(len(p_ids)):
-        ver_palet(p_ids, i)
-
-    for z in range(PALET_Z):
-        ver_camion_lateral(t_ids, z)
+    p_tipo, p_ids, t_tipo, t_ids = cargar_camion(paradas, cajas, barriles, cj13)
+    resumen(paradas, cajas, barriles, cj13, p_tipo, p_ids)
+    for z in range(PALET_Z - 1, -1, -1):
+        ver_camion_lateral(t_tipo, t_ids, z)

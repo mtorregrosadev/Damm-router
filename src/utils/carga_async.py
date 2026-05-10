@@ -21,8 +21,15 @@ Salida (dict):
 """
 
 import asyncio
-from truck_loader import cargar_camion, CAMION_COLS, CAMION_FILAS, PALET_CAP
-from mongo import get_db
+try:
+    from src.alghoritms.truck_loader import cargar_camion, CAMION_COLS, CAMION_FILAS, PALET_CAP
+except ImportError:
+    from truck_loader import cargar_camion, CAMION_COLS, CAMION_FILAS, PALET_CAP
+
+try:
+    from src.db.mongo import get_db
+except ImportError:
+    from mongo import get_db
 
 CAPACIDAD_CAMION = CAMION_COLS * CAMION_FILAS * PALET_CAP  # 360 cajas
 

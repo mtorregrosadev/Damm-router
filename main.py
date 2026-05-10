@@ -7,7 +7,6 @@ Orquestra el flux complet en 3 passos per a TOTES les rutes del Excel:
   3. carga_async   — Generar matrius de càrrega del camió → MongoDB  (per a cada ruta)
 
 Ús:
-    cd src/
     python main.py
 """
 
@@ -18,13 +17,12 @@ from pathlib import Path
 
 # ── Resolució d'imports interns ───────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
-for _sub in ('db', 'alghoritms', 'utils'):
-    sys.path.insert(0, str(BASE_DIR / _sub))
+sys.path.insert(0, str(BASE_DIR))
 
-from db.excel_to_sql import load_excel_to_sqlite   # noqa: E402
-from alghoritms.router import executar_ruta         # noqa: E402
-from utils.carga_async import generar_carga         # noqa: E402
-from mongo import get_db                            # noqa: E402
+from src.db.excel_to_sql import load_excel_to_sqlite   # noqa: E402
+from src.alghoritms.router import executar_ruta         # noqa: E402
+from src.utils.carga_async import generar_carga         # noqa: E402
+from src.db.mongo import get_db                            # noqa: E402
 
 
 # ── Descoberta de rutes ────────────────────────────────────────────────────────

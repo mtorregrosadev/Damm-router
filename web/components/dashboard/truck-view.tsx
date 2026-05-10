@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/i18n"
 import { useTruckLoad, useDriverRoutes } from "@/hooks/use-truck-load"
 import { useMongoDBTruck, type MongoDBTruckStats } from "@/hooks/use-mongodb-truck"
 import type { TruckLoadData, DriverRoute } from "@/lib/types/truck-load"
+import type { RouteStop } from "@/lib/types/route-data"
 import { getClientColor } from "@/lib/types/truck-load"
 import * as THREE from "three"
 import { Loader2, Truck, MapPin, Route, Package, Layers, Box, BarChart3 } from "lucide-react"
@@ -16,10 +17,11 @@ interface TruckViewProps {
   onSelectStop: (id: number | null) => void
   routeId: string
   driverId?: string
+  stopsData: RouteStop[]
 }
 
-// Generate stop info from client matrix
-function generateStopsFromMatrix(clients: number[][][]): { stopId: number; stopName: string; color: string; cellCount: number }[] {
+// Generate stop info from client matrix mapping to actual route data
+function generateStopsFromMatrix(clients: number[][][], realStops: RouteStop[]): { stopId: number; stopName: string; color: string; cellCount: number }[] {
   const stopCounts: Record<number, number> = {}
   
   for (let x = 0; x < clients.length; x++) {
@@ -33,30 +35,33 @@ function generateStopsFromMatrix(clients: number[][][]): { stopId: number; stopN
     }
   }
 
-  const stopNames = [
-    "CASA MAURA",
-    "BAR EL RACO",
-    "REST. CAN PERE",
-    "CAFE CENTRAL",
-    "FORN DE PA",
-    "MERCAT LOCAL",
-    "HOTEL MARINA",
-    "SUPERMERCAT",
-    "PASTISSERIA",
-    "CARNISSERIA"
-  ]
+  // Create a map for quick lookup: order -> stopName
+  const stopMap: Record<number, string> = {}
+  realStops.forEach(s => {
+    if (s.nom) stopMap[s.ordre] = s.nom
+  })
 
   return Object.entries(stopCounts)
-    .map(([id, count]) => ({
-      stopId: Number(id),
-      stopName: stopNames[Number(id) - 1] || `Client ${id}`,
-      color: getClientColor(Number(id)),
-      cellCount: count
-    }))
+    .map(([id, count]) => {
+      const stopId = Number(id)
+      const stopName = stopMap[stopId]
+      
+      // If we don't have a name for this ID, it might be a data mismatch.
+      // We return null and filter it out to avoid "Ghost Clients".
+      if (!stopName) return null
+
+      return {
+        stopId,
+        stopName,
+        color: getClientColor(stopId),
+        cellCount: count
+      }
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null)
     .sort((a, b) => a.stopId - b.stopId)
 }
 
-export function TruckView({ selectedStop, onSelectStop, routeId: initialRouteId, driverId = "DRV001" }: TruckViewProps) {
+export function TruckView({ selectedStop, onSelectStop, routeId: initialRouteId, driverId = "DRV001", stopsData }: TruckViewProps) {
   const { t } = useLanguage()
   const [selectedRouteId, setSelectedRouteId] = useState(initialRouteId)
   const [hoveredStop, setHoveredStop] = useState<number | null>(null)
@@ -82,8 +87,8 @@ export function TruckView({ selectedStop, onSelectStop, routeId: initialRouteId,
   // Generate stops from the client matrix
   const stops = useMemo(() => {
     if (!truckLoad?.truck?.clients) return []
-    return generateStopsFromMatrix(truckLoad.truck.clients)
-  }, [truckLoad?.truck?.clients])
+    return generateStopsFromMatrix(truckLoad.truck.clients, stopsData)
+  }, [truckLoad?.truck?.clients, stopsData])
 
   const isLoading = routesLoading || loadLoading
 
@@ -139,7 +144,7 @@ export function TruckView({ selectedStop, onSelectStop, routeId: initialRouteId,
         <div className="flex-1 overflow-y-auto p-2">
           {routes.map((route) => (
             <RouteCard
-              key={route.routeId}
+              key={`${route.routeId}-${route.date}`}
               route={route}
               isSelected={route.routeId === selectedRouteId}
               onSelect={() => setSelectedRouteId(route.routeId)}
@@ -473,19 +478,31 @@ function TruckContainer({
   const cellHeight = dimensions.height / levels
   const cellDepth = dimensions.width / rows
 
-  // Offset para centrar
-  const offsetX = -dimensions.length / 2
-  const offsetY = -1.5
-  const offsetZ = -dimensions.width / 2
+  // Gap entre bloques (mínim per a que es toquin però no colisisonin)
+  const gap = 0.005
+  // Gap entre palets (una mica més gran per compensar el volum de les caixes)
+  const palletGap = 0.22
+  
+  // Visual proportions for "maximum volume" heavy duty boxes
+  const visualScaleX = 1.12 // Wider
+  const visualScaleY = 1.15 // Much taller
+  const visualScaleZ = 1.65 // Extremely deep/wide crates as requested
 
-  // Gap entre bloques
-  const gap = 0.03
+  // Offset para centrar (incluyendo el espacio extra de los palets)
+  // X: 2 palets de 4 boxes cada un
+  // Z: 3 palets de 3 boxes cada un
+  const extraSpaceX = (Math.floor(cols / 4) - 1) * palletGap
+  const extraSpaceZ = (Math.floor(rows / 3) - 1) * palletGap
+  
+  const offsetX = -(dimensions.length + extraSpaceX) / 2
+  const offsetY = -1.5
+  const offsetZ = -(dimensions.width + extraSpaceZ) / 2
 
   return (
     <group ref={groupRef}>
-      {/* Suelo del camion */}
+      {/* Suelo del camion (ajustat al tamany total amb palets) */}
       <RoundedBox
-        args={[dimensions.length + 0.2, 0.12, dimensions.width + 0.2]}
+        args={[dimensions.length + extraSpaceX + 0.2, 0.12, dimensions.width + extraSpaceZ + 0.2]}
         radius={0.03}
         position={[0, offsetY - 0.06, 0]}
       >
@@ -495,49 +512,30 @@ function TruckContainer({
       {/* Paredes transparentes */}
       {/* Izquierda */}
       <RoundedBox
-        args={[dimensions.length + 0.2, dimensions.height + 0.3, 0.06]}
+        args={[dimensions.length + extraSpaceX + 0.2, dimensions.height + 0.3, 0.06]}
         radius={0.02}
-        position={[0, offsetY + dimensions.height / 2 + 0.1, -dimensions.width / 2 - 0.08]}
+        position={[0, offsetY + dimensions.height / 2 + 0.1, -(dimensions.width + extraSpaceZ) / 2 - 0.08]}
       >
         <meshStandardMaterial color="#1E2A45" transparent opacity={0.12} />
       </RoundedBox>
 
       {/* Derecha */}
       <RoundedBox
-        args={[dimensions.length + 0.2, dimensions.height + 0.3, 0.06]}
+        args={[dimensions.length + extraSpaceX + 0.2, dimensions.height + 0.3, 0.06]}
         radius={0.02}
-        position={[0, offsetY + dimensions.height / 2 + 0.1, dimensions.width / 2 + 0.08]}
+        position={[0, offsetY + dimensions.height / 2 + 0.1, (dimensions.width + extraSpaceZ) / 2 + 0.08]}
       >
         <meshStandardMaterial color="#1E2A45" transparent opacity={0.12} />
       </RoundedBox>
 
       {/* Fondo (cabina) */}
       <RoundedBox
-        args={[0.06, dimensions.height + 0.3, dimensions.width + 0.2]}
+        args={[0.06, dimensions.height + 0.3, dimensions.width + extraSpaceZ + 0.2]}
         radius={0.02}
         position={[offsetX - 0.08, offsetY + dimensions.height / 2 + 0.1, 0]}
       >
         <meshStandardMaterial color="#1E2A45" transparent opacity={0.12} />
       </RoundedBox>
-
-      {/* Etiquetas */}
-      <Text
-        position={[offsetX - 0.2, offsetY + dimensions.height + 0.2, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-        fontSize={0.2}
-        color="#5570A0"
-      >
-        CABINA
-      </Text>
-
-      <Text
-        position={[-offsetX + 0.2, offsetY + dimensions.height + 0.2, 0]}
-        rotation={[0, -Math.PI / 2, 0]}
-        fontSize={0.2}
-        color="#5570A0"
-      >
-        PORTA
-      </Text>
 
       {/* Renderizar todos los bloques de la matriz */}
       {occupancy.map((colData, col) =>
@@ -548,9 +546,15 @@ function TruckContainer({
             const clientId = clients[col]?.[level]?.[row] ?? 0
             const color = getClientColor(clientId)
 
-            const xPos = offsetX + col * cellWidth + cellWidth / 2
+            // Espaiat extra per palets:
+            // Cada 4 columnes (X) hi ha un nou palet
+            // Cada 3 files (Z) hi ha un nou palet
+            const pX = Math.floor(col / 4)
+            const pZ = Math.floor(row / 3)
+
+            const xPos = offsetX + col * cellWidth + cellWidth / 2 + pX * palletGap
             const yPos = offsetY + level * cellHeight + cellHeight / 2
-            const zPos = offsetZ + row * cellDepth + cellDepth / 2
+            const zPos = offsetZ + row * cellDepth + cellDepth / 2 + pZ * palletGap
 
             const isStopSelected = selectedStop === clientId
             const isStopHovered = hoveredStop === clientId
@@ -579,8 +583,12 @@ function TruckContainer({
                 }}
               >
                 <RoundedBox
-                  args={[cellWidth - gap, cellHeight - gap, cellDepth - gap]}
-                  radius={0.02}
+                  args={[
+                    (cellWidth - gap) * visualScaleX,
+                    (cellHeight - gap) * visualScaleY,
+                    (cellDepth - gap) * visualScaleZ
+                  ]}
+                  radius={0.04}
                 >
                   <meshStandardMaterial
                     color={color}
@@ -593,7 +601,11 @@ function TruckContainer({
                 {showHighlight && (
                   <lineSegments>
                     <edgesGeometry
-                      args={[new THREE.BoxGeometry(cellWidth - gap + 0.02, cellHeight - gap + 0.02, cellDepth - gap + 0.02)]}
+                      args={[new THREE.BoxGeometry(
+                        (cellWidth - gap) * visualScaleX + 0.01,
+                        (cellHeight - gap) * visualScaleY + 0.01,
+                        (cellDepth - gap) * visualScaleZ + 0.01
+                      )]}
                     />
                     <lineBasicMaterial color="#FFFFFF" linewidth={2} />
                   </lineSegments>

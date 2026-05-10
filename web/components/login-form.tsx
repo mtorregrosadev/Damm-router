@@ -75,7 +75,7 @@ export function LoginForm() {
                 No hi ha rutes disponibles
               </div>
             ) : (
-              <div className="max-h-[260px] overflow-y-auto rounded-lg border border-border bg-background">
+              <div className="max-h-[380px] overflow-y-auto rounded-lg border border-border bg-background">
                 {routes.map((route) => {
                   const isSelected = selectedRuta === route.ruta && selectedData === route.data
                   return (
@@ -83,23 +83,33 @@ export function LoginForm() {
                       key={`${route.ruta}-${route.data}`}
                       type="button"
                       onClick={() => { setSelectedRuta(route.ruta); setSelectedData(route.data) }}
-                      className={`flex w-full items-center justify-between border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 ${
+                      className={`flex flex-col w-full border-b border-border p-4 text-left transition-colors last:border-b-0 ${
                         isSelected
                           ? "bg-primary text-primary-foreground"
                           : "hover:bg-muted text-foreground"
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold" style={{ fontFamily: 'var(--font-data)' }}>
-                          {route.ruta}
-                        </span>
-                        <span className="text-xs opacity-70" style={{ fontFamily: 'var(--font-data)' }}>
+                      <div className="flex w-full items-center justify-between mb-1.5">
+                        <span className="text-[11px] opacity-70" style={{ fontFamily: 'var(--font-data)' }}>
                           {route.data}
                         </span>
+                        
+                        <div className="flex items-center justify-end gap-3 text-xs opacity-80" style={{ fontFamily: 'var(--font-data)' }}>
+                          <span>{route.kms_estimats || 45} Km's</span>
+                          <span>{formatMinutes(route.temps_total_min)}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-xs opacity-60" style={{ fontFamily: 'var(--font-data)' }}>
-                        <span>{route.total_parades} par.</span>
-                        <span>{formatMinutes(route.temps_total_min)}</span>
+
+                      <div className="mb-2">
+                        <p className="text-[13px] font-medium leading-relaxed opacity-90 line-clamp-1" style={{ fontFamily: 'var(--font-data)' }}>
+                          {route.zones?.join(' ➔ ') || 'Sortida ➔ Ruta'}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center justify-between gap-3 opacity-60 text-xs font-semibold" style={{ fontFamily: 'var(--font-data)' }}>
+                        <span className="truncate">{route.ruta}</span>
+                        <span className="truncate">{route.repartidor || 'Repartidor'}</span>
+                        <span className="whitespace-nowrap">{route.total_parades} parades</span>
                       </div>
                     </button>
                   )

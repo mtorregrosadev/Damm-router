@@ -19,7 +19,10 @@ interface SidebarProps {
 function formatMinutes(totalMin: number): string {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
-  return h > 0 ? `${h}h ${m}min` : `${m}min`
+  if (h > 0) {
+    return m > 0 ? `${h}h ${m}min` : `${h}h`
+  }
+  return `${m}min`
 }
 
 export function Sidebar({
@@ -37,12 +40,12 @@ export function Sidebar({
   const uniqueOrdres = new Set(stops.map(s => s.ordre)).size
 
   return (
-    <aside className="flex w-[280px] flex-col border-r border-border bg-card">
+    <aside className="flex w-[400px] flex-col border-r border-border bg-card overflow-hidden">
       {/* Back button when in truck view */}
       {showTruckView && (
         <button
           onClick={onToggleTruckView}
-          className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="flex items-center gap-2 border-b border-border px-8 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
           {t.dashboard.backToMap}
@@ -50,48 +53,42 @@ export function Sidebar({
       )}
 
       {/* Truck summary card */}
-      <div className="border-b border-border p-4">
-        <span className="text-xs font-medium text-foreground" style={{ fontFamily: 'var(--font-ui)', fontWeight: 500 }}>
+      <div className="border-b border-border p-8">
+        <span className="text-xs font-medium text-foreground uppercase tracking-widest" style={{ fontFamily: 'var(--font-ui)', fontWeight: 600 }}>
           {t.dashboard.truck}
         </span>
 
         {/* Truck illustration */}
-        <div className="my-4 flex justify-center">
-          <TruckIllustration />
-        </div>
+        {!showTruckView && (
+          <div className="my-6 flex justify-center">
+            <TruckIllustration />
+          </div>
+        )}
 
         {/* Look inside button */}
-        <Button
-          onClick={onToggleTruckView}
-          variant="outline"
-          className={`w-full border-primary text-primary hover:bg-primary hover:text-primary-foreground ${
-            showTruckView ? "bg-primary text-primary-foreground" : ""
-          }`}
-        >
-          {t.dashboard.lookInside}
-        </Button>
+        {!showTruckView && (
+          <Button
+            onClick={onToggleTruckView}
+            variant="outline"
+            className="w-full border-primary text-primary hover:bg-primary hover:text-primary-foreground h-11 text-sm font-bold uppercase tracking-wider"
+          >
+            {t.dashboard.lookInside}
+          </Button>
+        )}
 
         {/* Stats */}
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-8 grid grid-cols-2 gap-6">
           <div>
-            <p className="text-[10px] text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-data)' }}>
               {t.dashboard.estimatedTime}
             </p>
-            <p className="text-[13px] text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>
+            <p className="text-[16px] text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>
               {summary ? formatMinutes(summary.temps_total_min) : "—"}
             </p>
           </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>
-              {t.stops.skipped}
-            </p>
-            <p className="text-[13px] text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>
-              {summary ? summary.clients_saltats : "—"}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>Stops</p>
-            <p className="text-[13px] text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>
+          <div className="text-right">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-data)' }}>Stops</p>
+            <p className="text-[16px] text-foreground" style={{ fontFamily: 'var(--font-title)', fontWeight: 800, textTransform: 'uppercase' }}>
               {summary ? summary.clients_visitats : "—"} {t.dashboard.stops}
             </p>
           </div>
@@ -99,8 +96,8 @@ export function Sidebar({
       </div>
 
       {/* Stops list */}
-      <ScrollArea className="flex-1">
-        <div className="p-3">
+      <ScrollArea className="flex-1 min-h-0 w-full">
+        <div className="px-8 py-6">
           {isLoading ? (
             <div className="py-8 text-center text-xs text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>
               {t.stops.loadingRoute}
@@ -159,37 +156,40 @@ function StopCard({
   return (
     <button
       onClick={onClick}
-      className={`mb-2 w-full rounded-lg border p-3 text-left transition-all ${
+      className={`mb-3 w-full rounded-xl border p-4 text-left transition-all ${
         isSelected
-          ? "border-primary bg-primary/10"
-          : "border-border bg-muted hover:border-muted-foreground"
+          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+          : "border-border bg-muted/30 hover:border-muted-foreground/30 hover:bg-muted/50"
       }`}
     >
-      <div className="flex items-start gap-3">
-        {/* Stop number */}
-        <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-primary-foreground ${stop.fora_franja ? 'bg-amber' : 'bg-primary'}`}>
-          {stop.ordre}
-        </div>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Stop number */}
+          <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-primary-foreground ${stop.fora_franja ? 'bg-amber' : 'bg-primary'}`}>
+            {stop.ordre}
+          </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="truncate text-xs font-semibold text-foreground" style={{ fontFamily: 'var(--font-ui)', fontWeight: 500 }}>
-            {stop.nom}
-          </p>
-          <p className="truncate text-[10px] text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>
-            {stop.zona}
-          </p>
+          {/* Info */}
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-bold text-foreground" style={{ fontFamily: 'var(--font-ui)' }}>
+              {stop.nom}
+            </p>
+          </div>
         </div>
 
         {/* Arrival time */}
-        <div className="flex items-center gap-1 text-[10px] text-muted-foreground" style={{ fontFamily: 'var(--font-data)' }}>
+        <div className="flex flex-shrink-0 items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-white px-2 py-0.5 rounded-md border border-border/50" style={{ fontFamily: 'var(--font-data)' }}>
           <Clock className="h-3 w-3" />
           {stop.hora}
         </div>
       </div>
 
+      <p className="truncate text-[10px] text-muted-foreground mb-3 pl-9" style={{ fontFamily: 'var(--font-data)' }}>
+        {stop.zona}
+      </p>
+
       {/* Badges row */}
-      <div className="mt-2 flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1 pl-9">
         {stop.temps_descarrega > 0 && (
           <span className="rounded-full px-2 py-0.5 text-[10px]"
             style={{ fontFamily: 'var(--font-data)', background: 'var(--blue-light)', color: 'var(--blue-info)' }}>

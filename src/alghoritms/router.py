@@ -34,9 +34,12 @@ import folium
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 BASE_DIR = Path(__file__).parent
-sys.path.insert(0, str(BASE_DIR.parent / 'db'))
+sys.path.insert(0, str(BASE_DIR.parent.parent))
 
-from mongo import get_db  # noqa: E402
+try:
+    from src.db.mongo import get_db
+except ImportError:
+    from mongo import get_db
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -66,9 +69,9 @@ DISTANCIA_PARADA_COMPARTIDA_M = 80
 
 TEMPS_DESCÀRREGA: dict[str, int] = {}
 
-PENALITZACIO_ALTA     = 99999
-PENALITZACIO_NORMAL   = 3600
-PENALITZACIO_OPCIONAL = 500
+PENALITZACIO_ALTA     = 9999999
+PENALITZACIO_NORMAL   = 999999
+PENALITZACIO_OPCIONAL = 5000
 
 PRIORITATS_CLIENT: dict[str, int] = {}
 
@@ -547,20 +550,25 @@ def resoldre_ruta(context: dict):
 # ═══════════════════════════════════════════════════════════════════
 
 def _osrm_geometria_tram(lon_i, lat_i, lon_j, lat_j) -> list:
+    """Obté la geometria real del tram. Si OSRM falla, retorna línia recta."""
     url = (
         f"http://router.project-osrm.org/route/v1/driving/"
         f"{lon_i},{lat_i};{lon_j},{lat_j}"
         f"?geometries=geojson&overview=full"
     )
-    resposta = urllib.request.urlopen(
-        urllib.request.Request(url, headers={'User-Agent': 'damm_smart_truck_hackathon'}),
-        timeout=30
-    )
-    dades = json.loads(resposta.read().decode('utf-8'))
-    if dades.get('code') != 'Ok':
-        raise RuntimeError(f"OSRM Route error: {dades.get('code')}")
-    coords = dades['routes'][0]['geometry']['coordinates']
-    return [[lat, lon] for lon, lat in coords]
+    try:
+        resposta = urllib.request.urlopen(
+            urllib.request.Request(url, headers={'User-Agent': 'damm_smart_truck_hackathon'}),
+            timeout=15
+        )
+        dades = json.loads(resposta.read().decode('utf-8'))
+        if dades.get('code') != 'Ok':
+            return [[lat_i, lon_i], [lat_j, lon_j]]
+        coords = dades['routes'][0]['geometry']['coordinates']
+        return [[lat, lon] for lon, lat in coords]
+    except Exception as e:
+        print(f"  [AVÍS] Error obtenint geometria OSRM: {e}. Usant línia recta.")
+        return [[lat_i, lon_i], [lat_j, lon_j]]
 
 
 def _segons_a_hhmm(segons: int) -> str:
@@ -753,9 +761,9 @@ _COLORS_MAPA = [
 ]
 
 
-def exportar_mapa_i_json(parades_ruta: list, ruta: str, data: str) -> None:
+def exportar_mapa_i_json(parades_ruta: list, ruta: str, data: str, exportar_html: bool = False) -> None:
     """
-    Genera ruta_optima.json i ruta_damm.html a partir de les parades calculades.
+    Genera ruta_optima.json i opcionalment ruta_damm.html a partir de les parades calculades.
     Les parades compartides es marquen explícitament.
     """
     # ── JSON ──────────────────────────────────────────────────────
@@ -769,6 +777,9 @@ def exportar_mapa_i_json(parades_ruta: list, ruta: str, data: str) -> None:
             f, ensure_ascii=False, indent=2
         )
     print("[OK] Exportat ruta_optima.json")
+
+    if not exportar_html:
+        return
 
     # ── Mapa Folium ───────────────────────────────────────────────
     mapa = folium.Map(
@@ -866,7 +877,7 @@ def guardar_a_db(parades_ruta: list, ruta: str, data: str,
 # BLOC 12 — FUNCIÓ PÚBLICA PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════
 
-def executar_ruta(ruta: str, data: str, dia_setmana: int) -> dict:
+def executar_ruta(ruta: str, data: str, dia_setmana: int, exportar_html: bool = False) -> dict:
     """
     Executa el flux complet d'optimització de ruta.
 
@@ -874,6 +885,7 @@ def executar_ruta(ruta: str, data: str, dia_setmana: int) -> dict:
       ruta:        identificador de ruta (p.ex. 'DR0006')
       data:        data en format 'DD/MM/YYYY'
       dia_setmana: 1=Dll, 2=Dm, 3=Dc, 4=Dj, 5=Dv
+      exportar_html: boolean per decidir si es genera el mapa folium
 
     Retorna un diccionari amb:
       - ruta, data
@@ -904,7 +916,7 @@ def executar_ruta(ruta: str, data: str, dia_setmana: int) -> dict:
         ruta_indices, solution, routing, manager, time_dim, context
     )
 
-    exportar_mapa_i_json(parades_ruta, ruta, data)
+    exportar_mapa_i_json(parades_ruta, ruta, data, exportar_html=exportar_html)
     guardar_a_db(parades_ruta, ruta, data,
                  clients_visitats, clients_saltats, temps_total_s)
 
@@ -928,6 +940,8 @@ if __name__ == '__main__':
     parser.add_argument("--data", type=str, default="19/03/2026")
     parser.add_argument("--dia",  type=int, default=4,
                         help="Dia de la setmana (1=Dll … 5=Dv)")
+    parser.add_argument("--html", action="store_true",
+                        help="Generar mapa interactiu ruta_damm.html")
     args = parser.parse_args()
 
-    executar_ruta(args.ruta, args.data, args.dia)
+    executar_ruta(args.ruta, args.data, args.dia, exportar_html=args.html)

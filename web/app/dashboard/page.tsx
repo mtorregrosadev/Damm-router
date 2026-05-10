@@ -8,6 +8,7 @@ import { Topbar } from "@/components/dashboard/topbar"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { useRouteData } from "@/hooks/use-route-data"
 import { AUTH_KEY } from "@/hooks/use-auth"
+import { useIsMobile } from "@/hooks/use-mobile"
 import type { AuthSession } from "@/hooks/use-auth"
 
 const RouteMap = dynamic(
@@ -34,8 +35,14 @@ const TruckView = dynamic(
   }
 )
 
+const MobileDashboard = dynamic(
+  () => import("@/components/dashboard/mobile-dashboard").then((mod) => mod.MobileDashboard),
+  { ssr: false }
+)
+
 function DashboardContent() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const [selectedStop, setSelectedStop] = useState<number | null>(null)
   const [showTruckView, setShowTruckView] = useState(false)
   const [session, setSession] = useState<AuthSession | null>(null)
@@ -78,6 +85,18 @@ function DashboardContent() {
     )
   }
 
+  if (isMobile) {
+    return (
+      <MobileDashboard
+        summary={summary}
+        stops={stops}
+        isLoading={isLoading}
+        onLogout={handleLogout}
+        routeId={session?.ruta ?? ""}
+      />
+    )
+  }
+
   return (
     <div className="flex h-screen flex-col bg-[#0B0F1C]">
       <Topbar
@@ -104,6 +123,7 @@ function DashboardContent() {
               onSelectStop={setSelectedStop}
               routeId={summary?.ruta ?? session?.ruta ?? ""}
               driverId="all"
+              stopsData={stops}
             />
           ) : (
             <RouteMap

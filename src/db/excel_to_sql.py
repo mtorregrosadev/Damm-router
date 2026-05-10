@@ -1,22 +1,27 @@
 import re
 import pandas as pd
 from pathlib import Path
-from mongo import get_db
+
+try:
+    from src.db.mongo import get_db
+except ImportError:
+    from mongo import get_db
 
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent.parent
 
 EXCEL_FILES = {
-    "../../BD/Hackaton.xlsx": {
+    PROJECT_ROOT / "BD/Hackaton.xlsx": {
         "Detalle entrega":      "detalle_entrega",
         "Cabecera Transporte":  "cabecera_transporte",
         "Direcciones":          "direcciones",
         "ZONAS":                "zonas",
         "Materiales zubic":     "materiales_zubic",
     },
-    "../../BD/Horarios Entrega.XLSX": {
+    PROJECT_ROOT / "BD/Horarios Entrega.XLSX": {
         "Sheet1": "horarios_entrega",
     },
 }

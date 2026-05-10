@@ -5,6 +5,10 @@ export interface RouteListItem {
   clients_visitats: number
   clients_saltats: number
   temps_total_min: number
+  // Extra fields for rich UI display:
+  zones?: string[]
+  repartidor?: string
+  kms_estimats?: number
 }
 
 export interface RoutesListResponse {

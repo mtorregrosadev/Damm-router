@@ -1,4 +1,4 @@
-# 🌟 Damm Smart Truck
+# <img src="src/pic/chappy.jpeg" width="35" style="vertical-align: middle;" />  Ruta Damm 
 
 > **From warehouse to street — the perfect route and a loaded truck in seconds.**
 

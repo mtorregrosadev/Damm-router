@@ -1,6 +1,7 @@
 # 🌟 Damm Smart Truck
 
 > **From warehouse to street — the perfect route and a loaded truck in seconds.**
+🏆 **Winner** — Best MongoDB Implementation · MLH · Interhack BCN 2026
 
 🏆 **Winner** — Best MongoDB Implementation · MLH · Interhack BCN 2026
 

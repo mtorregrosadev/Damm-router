@@ -2,6 +2,8 @@
 
 > **From warehouse to street — the perfect route and a loaded truck in seconds.**
 
+🏆 **Winner** — Best MongoDB Implementation · MLH · Interhack BCN 2026
+
 Damm Smart Truck is a logistics optimization prototype built during **Interhack BCN 2026** for Damm's DDI distribution network. It jointly optimizes delivery routes and truck cargo configuration, reducing unloading time, minimizing kilometers, and handling reverse logistics — all in one unified pipeline.
 
 ---

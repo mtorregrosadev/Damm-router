@@ -1,163 +1,150 @@
-# Damm-router
+# 🌟 Damm Smart Truck
 
-Hackathon
-Optimitzador de rutes i sistema de càrrega per a camions (prototip Hackathon).
+> **From warehouse to street — the perfect route and a loaded truck in seconds.**
 
-Aquest repositori conté eines per calcular l'ordre òptim de visita d'un camió
-de repartiment (VRPTW via OR-Tools), obtenir traçats reals (OSRM / OSM), i
-generar el pla de càrrega dels camions (matrius 3D). També inclou una interfície
-web (Next.js) per visualitzar i gestionar els resultats.
+Damm Smart Truck is a logistics optimization prototype built during **Interhack BCN 2026** for Damm's DDI distribution network. It jointly optimizes delivery routes and truck cargo configuration, reducing unloading time, minimizing kilometers, and handling reverse logistics — all in one unified pipeline.
 
-## Característiques principals
+---
 
-- Optimització de rutes amb OR-Tools (VRP amb time-windows).
-- Geocodificació de clients amb Nominatim (geopy) i rutes/taules amb OSRM.
-- Exportació de resultats a JSON i mapa Folium (`ruta_optima.json`, `ruta_damm.html`).
-- Generació de matrius de càrrega per camions (algorisme de paletització).
-- Backend + petits scripts Python per carregar dades i executar el flux complet.
-- Frontend Next.js dins de la carpeta `web/` per visualització i dashboards.
+## What it does
 
-# Damm-router
+| Module | Description |
+|---|---|
+| 🗺️ **Route Optimizer** | VRPTW via OR-Tools — optimal visit order respecting time windows, real travel times, and proximity clustering |
+| 📦 **Truck Loader** | 3D pallet assembly in reverse delivery order — first stop at the back, last stop at the front |
+| ♻️ **Reverse Logistics** | Tracks returnable crates, bottles, and kegs collected during the route |
+| 🌐 **Web Interface** | Next.js dashboard with interactive Leaflet map, stop timeline, and cargo plan visualization |
 
-Optimizador de rutas y sistema de carga para camiones (prototipo Hackathon).
+---
 
-Este repositorio contiene herramientas para calcular el orden óptimo de visita
-de un camión de reparto (VRPTW vía OR-Tools), obtener trazados reales (OSRM /
-OSM) y generar el plan de carga de los camiones (matrices 3D). También incluye
-una interfaz web (Next.js) para visualizar y gestionar los resultados.
+## Architecture
 
-## Características principales
-
-- Optimización de rutas con OR-Tools (VRP con time-windows).
-- Geocodificación de clientes con Nominatim (geopy) y tablas/rutas con OSRM.
-- Exportación de resultados a JSON y mapa Folium (`ruta_optima.json`,
-  `ruta_damm.html`).
-- Generación de matrices de carga para camiones (algoritmo de paletización).
-- Backend y pequeños scripts Python para cargar datos y ejecutar el flujo
-  completo.
-- Frontend Next.js en la carpeta `web/` para visualización y dashboards.
-
-## Estructura del repositorio (resumen)
-
-- `main.py`            — punto de entrada para orquestar el flujo completo.
-- `ARQUITECTURA.md`   — documento técnico con el diseño del módulo
-  `src/alghoritms/router.py`.
-- `src/`              — código Python principal:
-  - `alghoritms/router.py`      — optimizador de ruta (API pública:
-    `executar_ruta`)
-  - `alghoritms/truck_loader.py`— generador de palets y ensamblaje del camión
-  - `utils/carga_async.py`      — API async para generar la carga y guardar en MongoDB
-  - `db/`                       — conectores y scripts de carga (excel_to_sql, mongo)
-  - `test_carga.py`, `test_truck_loader.py` — ejemplos / tests de uso
-- `BD/`               — ficheros de entrada (Excel) usados durante el hackathon
-- `web/`              — frontend Next.js (React + Leaflet / dashboards)
-
-## Requisitos
-
-- Sistema: macOS / Linux / Windows
-- Python 3.10+
-- MongoDB (para datos de entrada y resultados). Algunas partes del código
-  también pueden usar SQLite para prototipado (ver `src/db/excel_to_sql.py`).
-- Recomendado para ejecutar rutas completas: conexión a OSRM y uso responsable
-  de Nominatim (rate limits).
-
-Dependencias Python principales:
-
-- ortools
-- pandas, numpy
-- geopy
-- folium
-- certifi, requests, pymongo
-
-Frontend:
-
-- Node.js (compatible con la versión indicada en `web/package.json`) y pnpm/npm.
-
-Nota: no hay `requirements.txt` en la rama; puede instalar las dependencias de
-prueba con el pip line que se muestra más abajo.
-
-## Instalación rápida (Python)
-
-Recomendado: crear un entorno virtual e instalar paquetes.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install ortools pandas numpy geopy folium certifi requests pymongo
+```
+damm-router/
+├── main.py                        # Orchestrates the full pipeline
+├── ARQUITECTURA.md                # Technical design document
+├── BD/                            # Input Excel files (hackathon data)
+├── src/
+│   ├── alghoritms/
+│   │   ├── router.py              # Route optimizer (public API: executar_ruta)
+│   │   └── truck_loader.py        # Pallet generator & truck assembly
+│   ├── utils/
+│   │   └── carga_async.py         # Async API → generates cargo & saves to MongoDB
+│   └── db/
+│       ├── excel_to_sql.py        # Excel → SQLite (prototyping)
+│       └── mongo.py               # MongoDB connector
+├── web/                           # Next.js frontend (React + Leaflet)
+│   └── ...
+└── test_carga.py / test_truck_loader.py
 ```
 
-Para el frontend, desde la carpeta `web/`:
+**Data flow:**
+
+```
+Excel (Hackaton.xlsx + Horarios.xlsx + ZM040.xlsx)
+  → MongoDB (detalle_entrega, horarios_entrega)
+    → router.py  →  ruta_optima.json + ruta_damm.html
+    → truck_loader.py  →  resultado_carga_camion (MongoDB)
+      → Next.js web  →  interactive dashboard
+```
+
+---
+
+## Quickstart
+
+### Python backend
 
 ```bash
-# dentro de /web
-npm install
-# o si usas pnpm: pnpm install
+# 1. Create virtual environment
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
+pip install ortools pandas numpy geopy folium certifi requests pymongo
+
+# 3. Load data & run full pipeline
+python main.py
+```
+
+### Run a single route
+
+```bash
+python src/alghoritms/router.py --ruta DR0006 --data 19/03/2026 --dia 4 --html
+```
+
+Or from Python:
+
+```python
+from src.alghoritms.router import executar_ruta
+executar_ruta('DR0006', '19/03/2026', dia=4, exportar_html=True)
+```
+
+### Generate truck cargo plan
+
+```bash
+python src/test_carga.py
+```
+
+Or from an async context:
+
+```python
+from src.utils.carga_async import generar_carga
+await generar_carga(id_ruta, ids_parada)
+```
+
+### Web frontend
+
+```bash
+cd web
+npm install        # or: pnpm install
 npm run dev
 ```
 
-## Cómo ejecutar las partes principales
+---
 
-- Ejecutar el flujo completo (cargar datos + optimizar + generar carga):
+## Inputs & Outputs
 
-  ```bash
-  python main.py
-  ```
+**Inputs** (MongoDB collections loaded from Excel):
+- `detalle_entrega` — orders per stop (client, products, quantities)
+- `horarios_entrega` — time windows per client
 
-  Esta rutina invocará la carga del Excel a la base de datos y procesará todas
-  las rutas encontradas. Requiere la configuración de acceso a MongoDB (ver
-  `src/db/mongo.py`).
-- Ejecutar el optimizador para una sola ruta (modo script):
-
-  ```bash
-  python src/alghoritms/router.py --ruta DR0006 --data 19/03/2026 --dia 4 --html
-  ```
-
-  O importar la función desde Python:
-
-  ```python
-  from src.alghoritms.router import executar_ruta
-  executar_ruta('DR0006', '19/03/2026', 4, exportar_html=True)
-  ```
-- Generar la carga del camión (ejemplo):
-
-  ```bash
-  python src/test_carga.py
-  ```
-
-  O llamar `await generar_carga(id_ruta, ids_parada)` desde un programa async
-  (ver `src/utils/carga_async.py`).
-
-## Entradas y resultados
-
-- Datos de entrada principales: colecciones MongoDB `detalle_entrega` y
-  `horarios_entrega`. Hay scripts para convertir Excel a BD en `src/db/`.
-- Resultados generados:
-  - `ruta_optima.json` — JSON con los datos de la ruta calculada
-  - `ruta_damm.html`  — mapa interactivo (Folium)
-  - MongoDB: colecciones `ruta_punts`, `ruta_resum`, `resultado_carga_camion`
-
-## Notas operativas y limitaciones
-
-- La API pública de OSRM (router.project-osrm.org) puede tener límites. Si
-  se trabaja con volúmenes altos, considerar desplegar un OSRM propio o usar
-  otros servicios de routing.
-- OR-Tools: se recomienda instalar una versión 9.x o superior (pip: ortools).
-- El código contiene constantes y heurísticas (distancias, factor de
-  tráfico, duración de jornada) dentro de `src/alghoritms/router.py` que se
-  pueden ajustar según necesidad.
-
-## Contribuir
-
-- Issues y PRs son bienvenidos. Si quieres reproducir datos del hackathon,
-  empieza cargando los Excel a la BD con los scripts en `src/db/`.
-
-## Licencia
-
-Ver `LICENSE`.
+**Outputs:**
+- `ruta_optima.json` — optimized route with stop order and estimated times
+- `ruta_damm.html` — interactive Folium map
+- MongoDB `ruta_punts` — individual stop data
+- MongoDB `ruta_resum` — route-level summary
+- MongoDB `resultado_carga_camion` — truck cargo matrix
 
 ---
-Pequeño resumen: el repositorio ofrece un prototipo completo para optimizar
-rutas y preparar la carga del camión, con salida en JSON y mapa. Revisa
-`ARQUITECTURA.md` para detalles técnicos y ajusta las conexiones a MongoDB /
-OSRM según tu entorno.
+
+## Requirements
+
+- Python 3.10+
+- Node.js (version in `web/package.json`) + npm or pnpm
+- MongoDB instance (local or Atlas)
+- Internet access for Nominatim geocoding and OSRM routing
+
+> **Note on OSRM:** The public API (`router.project-osrm.org`) has rate limits. For high-volume use, deploy a local OSRM instance or substitute another routing provider.
+
+---
+
+## Key assumptions & tunable constants
+
+Inside `src/alghoritms/router.py` you'll find constants that can be adjusted:
+
+- **Traffic factor per time slot** — multiplier applied to base travel times
+- **Unloading duration** — estimated minutes per stop based on box count
+- **Max route duration** — working day length cap
+- **Clustering threshold** — distance (m) below which two stops are merged into one
+
+---
+
+## Built with
+
+`OR-Tools` · `geopy / Nominatim` · `OSRM` · `Folium` · `pandas` · `pymongo` · `Next.js` · `React` · `Leaflet`
+
+---
+
+## License
+
+See `LICENSE`.

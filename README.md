@@ -1,7 +1,6 @@
 # 🌟 Damm Smart Truck
 
 > **From warehouse to street — the perfect route and a loaded truck in seconds.**
-🏆 **Winner** — Best MongoDB Implementation · MLH · Interhack BCN 2026
 
 🏆 **Winner** — Best MongoDB Implementation · MLH · Interhack BCN 2026
 
@@ -13,10 +12,10 @@ Damm Smart Truck is a logistics optimization prototype built during **Interhack 
 
 | Module | Description |
 |---|---|
-| 🗺️ **Route Optimizer** | VRPTW via OR-Tools — optimal visit order respecting time windows, real travel times, and proximity clustering |
-| 📦 **Truck Loader** | 3D pallet assembly in reverse delivery order — first stop at the back, last stop at the front |
-| ♻️ **Reverse Logistics** | Tracks returnable crates, bottles, and kegs collected during the route |
-| 🌐 **Web Interface** | Next.js dashboard with interactive Leaflet map, stop timeline, and cargo plan visualization |
+| **Route Optimizer** | VRPTW via OR-Tools — optimal visit order respecting time windows, real travel times, and proximity clustering |
+| **Truck Loader** | 3D pallet assembly in reverse delivery order — first stop at the back, last stop at the front |
+| **Reverse Logistics** | Tracks returnable crates, bottles, and kegs collected during the route |
+| **Web Interface** | Next.js dashboard with interactive Leaflet map, stop timeline, and cargo plan visualization |
 
 ---
 

@@ -19,6 +19,27 @@ Ruta Damm is a logistics optimization prototype built during **Interhack BCN 202
 
 ---
 
+## Screenshots
+
+### Desktop View (Routes & Cargo)
+<table>
+  <tr>
+    <td><img src="src/pic/rutes.jpeg" alt="Routes View" width="400"/></td>
+    <td><img src="src/pic/carrega.jpeg" alt="Truck Loading Plan" width="400"/></td>
+  </tr>
+</table>
+
+### Mobile View (Driver App Example)
+<table>
+  <tr>
+    <td><img src="src/pic/mobile/IMG_4785.png" alt="Mobile Dashboard 3" width="200"/></td>
+    <td><img src="src/pic/mobile/IMG_4783.png" alt="Mobile Dashboard 1" width="200"/></td>
+    <td><img src="src/pic/mobile/IMG_4784.png" alt="Mobile Dashboard 2" width="200"/></td>
+  </tr>
+</table>
+
+---
+
 ## Architecture
 
 ```
